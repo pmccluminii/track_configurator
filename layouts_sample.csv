@@ -1,0 +1,5 @@
+LayoutName,Shape,Length,Width,Depth,Stock,MaxRun,StartEnd,EndEnd,Corner1,Corner2,Corner3,MidComponents
+Straight-5.84,Straight,5.84,,,,"2,1",,End cap,End cap,,,,1.50:FEED-TEE|3.25:SENSOR-IR
+L-3x2,L,3.0,2.0,,"2,1",,End cap,End cap,Plain join,,
+Rect-4x2,Rectangle,4.0,2.0,,"2,1",,End cap,End cap,Plain join,Plain join,Plain join,
+U-4x1.5,U,4.0,,1.5,"2,1",,End cap + feed,End cap + feed,Plain join,Plain join,,

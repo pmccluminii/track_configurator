@@ -1,0 +1,35 @@
+{
+  "join_types": {
+    "Plain join": {
+      "code": "J-PLAIN",
+      "desc": "Plain inline joiner"
+    },
+    "Feed join": {
+      "code": "J-FEED",
+      "desc": "In-line feed / junction"
+    },
+    "Flexible join": {
+      "code": "J-FLEX",
+      "desc": "Flexible corner joiner"
+    }
+  },
+  "end_types": {
+    "End cap": {
+      "code": "END-CAP",
+      "desc": "End cap"
+    },
+    "End cap + feed": {
+      "code": "END-FEED",
+      "desc": "End cap with feed"
+    },
+    "End cap + feed + connector": {
+      "code": "END-FEED-CONN",
+      "desc": "End cap + feed + end connector"
+    }
+  },
+  "symbols": {
+    "join": "circle",
+    "feed": "square",
+    "endcap": "triangle"
+  }
+}
