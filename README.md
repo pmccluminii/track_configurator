@@ -1,17 +1,8 @@
-# Track Layout Maker — Streamlit (Metric) v0.1
+# Track Layout Maker — Streamlit (Metric) v2.4.4
 
-Run locally in your browser with Streamlit.
-
-## Install
-```bash
-python3 -m pip install -r requirements.txt
-```
+Run in your browser with Streamlit.
 
 ## Run
-```bash
-streamlit run app.py
-```
-
 - Use the sidebar to pick shape, dimensions, stock lengths, joins/ends.
 - Add mid-run components as `position_m:PARTNO` lines.
 - Click **Generate PDF** to download a single-page PDF.
