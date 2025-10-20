@@ -264,9 +264,11 @@ with st.sidebar:
                 sync_session_state_from_config(config)
                 st.session_state["_uploaded_config_name"] = ""
                 st.session_state["confirm_reset"] = False
+                st.rerun()
         with col_reset2:
             if st.button("Cancel", key="cfg_reset_cancel"):
                 st.session_state["confirm_reset"] = False
+                st.rerun()
 
 # =========================================================
 # Excel-driven Options
