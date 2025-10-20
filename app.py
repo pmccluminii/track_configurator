@@ -1,4 +1,4 @@
-# app.py — v2.4.4
+# app.py — v2.5.1
 # - Text-only dimensions with outward normals
 # - Leg dimension labels are two lines ("Leg N" and "<len> m")
 # - Segment length labels rotate 90° on vertical legs (left/right)
@@ -16,7 +16,7 @@ from shared_logic import (
 )
 
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
-st.title("Track Layout Maker — (Metric) v2.5.0")
+st.title("Track Layout Maker — (Metric) v2.5.1")
 
 # =========================================================
 # Excel-driven Options
@@ -575,32 +575,54 @@ with st.sidebar:
     mid_str = st.text_area("Enter components (one per line as `pos_m:PARTNO`)", "1.0:FEED-TEE")
 
     st.header("Style")
-    font_px = st.slider("Font size (px)", 9, 24, 12)
-    track_stroke = st.slider("Track stroke (px)", 1, 8, 4)
-    dim_stroke = st.slider("(unused) Dimension stroke (px)", 1, 4, 1)  # compatibility only
-    node_size = st.slider("Node size (px)", 4, 16, 14)
+    show_style = st.toggle("Show style options", value=False)
+    if show_style:
+        font_px = st.slider("Font size (px)", 9, 24, 12)
+        track_stroke = st.slider("Track stroke (px)", 1, 8, 4)
+        dim_stroke = st.slider("(unused) Dimension stroke (px)", 1, 4, 1)  # compatibility only
+        node_size = st.slider("Node size (px)", 4, 16, 14)
 
-    st.subheader("Label Offsets (perpendicular to track)")
-    seg_label_off_px   = st.slider("Track LENGTH labels offset (px)", 2, 40, 18)
-    join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 35)
-    corner_label_off_px= st.slider("CORNER labels offset (px)", 30, 70, 50)
-    end_label_off_px   = st.slider("END labels offset (px)", 30, 70, 50)
-    mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 70, 20)
+        st.subheader("Label Offsets (perpendicular to track)")
+        seg_label_off_px   = st.slider("Track LENGTH labels offset (px)", 2, 40, 18)
+        join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 35)
+        corner_label_off_px= st.slider("CORNER labels offset (px)", 30, 70, 50)
+        end_label_off_px   = st.slider("END labels offset (px)", 30, 70, 50)
+        mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 70, 20)
 
-    st.subheader("Other")
-    dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, 55)
-    title_offset_px = st.slider("Title offset from top (px)", -60, 150, 0)
-    show_segment_ticks = st.checkbox("Show segment boundary ticks", True)
-    tick_len_px = st.slider("Tick length (px)", 4, 24, 10)
-    show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", True)
+        st.subheader("Other")
+        dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, 55)
+        title_offset_px = st.slider("Title offset from top (px)", -60, 150, 0)
+        show_segment_ticks = st.checkbox("Show segment boundary ticks", True)
+        tick_len_px = st.slider("Tick length (px)", 4, 24, 10)
+        show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", True)
 
-    st.divider()
-    st.subheader("Canvas / Cropping")
-    canvas_padding_px = st.slider("Canvas padding (px)", 100, 200, 140)
-    extra_top_px      = st.slider("Extra top space (px)", 0, 200, 30)
-    extra_bottom_px   = st.slider("Extra bottom space (px)", 0, 200, 30)
-    auto_bottom_buffer= st.checkbox("Auto add bottom buffer for dims/labels", True)
-    scroll_preview    = st.checkbox("Make preview scrollable", True)
+        st.divider()
+        st.subheader("Canvas / Cropping")
+        canvas_padding_px = st.slider("Canvas padding (px)", 100, 200, 140)
+        extra_top_px      = st.slider("Extra top space (px)", 0, 200, 30)
+        extra_bottom_px   = st.slider("Extra bottom space (px)", 0, 200, 30)
+        auto_bottom_buffer= st.checkbox("Auto add bottom buffer for dims/labels", True)
+        scroll_preview    = st.checkbox("Make preview scrollable", True)
+    else:
+        font_px = 12
+        track_stroke = 4
+        dim_stroke = 1
+        node_size = 14
+        seg_label_off_px = 18
+        join_label_off_px = 35
+        corner_label_off_px = 50
+        end_label_off_px = 50
+        mid_label_offset_px = 20
+        dim_offset_px = 55
+        title_offset_px = 0
+        show_segment_ticks = True
+        tick_len_px = 10
+        show_element_labels = True
+        canvas_padding_px = 140
+        extra_top_px = 30
+        extra_bottom_px = 30
+        auto_bottom_buffer = True
+        scroll_preview = True
 
 # Parse mids
 base_spec.mid_components = []
@@ -683,14 +705,6 @@ plan = compute_plan(base_spec)
 
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
-
-# Optional: quick debug
-with st.expander("Debug: show computed rules & leg lengths", expanded=False):
-    st.write({
-        "seg_lens_m": plan.get("seg_lens", []),
-        "total_len_m": plan.get("total_len", 0.0),
-        "rules": plan.get("rules", [])
-    })
 
 # Minimum-length rule messages
 if plan.get("rules"):
@@ -816,7 +830,7 @@ def pdf_bytes_for_spec(spec, plan, style):
         raise RuntimeError("CairoSVG required. Install with: python3 -m pip install cairosvg") from e
     return io.BytesIO(cairosvg.svg2pdf(bytestring=svg.encode("utf-8")))
 
-col1, col2 = st.columns([2,1])
+col1, _ = st.columns([2,1])
 with col1:
     if st.button("Generate PDF"):
         try:
@@ -824,44 +838,3 @@ with col1:
             st.download_button("Download PDF", data=pdf_buf, file_name=f"{base_spec.name}.pdf", mime="application/pdf")
         except Exception as e:
             st.error(str(e))
-
-with col2:
-    st.info("Batch mode: upload CSV to generate a multi-page PDF")
-    csv_file = st.file_uploader("Upload CSV", type=["csv"])
-    if csv_file is not None:
-        from PyPDF2 import PdfMerger, PdfReader
-        df = pd.read_csv(csv_file)
-        st.dataframe(df.head())
-        if st.button("Generate batch PDF"):
-            merger = PdfMerger()
-            for _, row in df.iterrows():
-                try:
-                    shp = str(row["Shape"]).strip()
-                    if shp.upper() == "U" and all(k in row for k in ["ULeg1","UBase","ULeg3"]):
-                        L1 = float(row["ULeg1"]); B = float(row["UBase"]); L3 = float(row["ULeg3"])
-                        L = B; W = None; D = (L1, B, L3)
-                    else:
-                        L = float(row["Length"])
-                        W = float(row["Width"]) if "Width" in row and not pd.isna(row["Width"]) else None
-                        D = float(row["Depth"]) if "Depth" in row and not pd.isna(row["Depth"]) else None
-                    nm  = str(row.get("LayoutName", f"{shp}"))
-                    stt = str(row.get("StartEnd","")); enn = str(row.get("EndEnd",""))
-                    c1r = str(row.get("Corner1",""));  c2r = str(row.get("Corner2","")); c3r = str(row.get("Corner3",""))
-                    stock = [float(x.strip()) for x in str(row.get("Stock","")).split(",") if str(row.get("Stock","")).strip()] or (stock_selected or [2.0, 1.0])
-                    mr = float(row["MaxRun"]) if "MaxRun" in row and not pd.isna(row["MaxRun"]) else None
-                    mids = []
-                    mc_str = str(row.get("MidComponents","")).strip()
-                    if mc_str:
-                        for part in [x.strip() for x in mc_str.split("|") if x.strip()]:
-                            pos, pn = part.split(":",1)
-                            mids.append(MidComponent(float(pos.strip()), pn.strip()))
-                    one = LayoutSpec(nm, shp, L, W, D, stock, mr, stt, enn, c1r, c2r, c3r, mids)
-                    one_plan = compute_plan(one)
-                    svg_row, _, _ = render_track_svg(one, one_plan, style)
-                    import cairosvg
-                    pb = io.BytesIO(cairosvg.svg2pdf(bytestring=svg_row.encode("utf-8")))
-                    merger.append(PdfReader(pb))
-                except Exception as e:
-                    st.error(f"Row failed: {e}")
-            out = io.BytesIO(); merger.write(out); merger.close(); out.seek(0)
-            st.download_button("Download batch PDF", data=out, file_name="Layouts.pdf", mime="application/pdf")
