@@ -132,7 +132,7 @@ def sync_session_state_from_config(cfg):
     for key in list(st.session_state.keys()):
         if key.startswith("cfg_inline_"):
             st.session_state.pop(key, None)
-st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
+st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide", initial_sidebar_state="expanded")
 st.title("Track Layout Maker — (Metric) v2.5.3")
 
 st.markdown(
@@ -141,9 +141,37 @@ st.markdown(
     :root {
         color-scheme: only light;
     }
-    body, .stApp, .stAppViewContainer {
+    body, .stApp, .stAppViewContainer, .main, .block-container {
         background-color: #ffffff !important;
         color: #111111 !important;
+    }
+    .stSidebar, .stSidebar > div, .stChatFloatingInputContainer {
+        background-color: #f7f7f7 !important;
+        color: #111111 !important;
+    }
+    .stMarkdown, .stTextInput > label, .stSelectbox > label, .stNumberInput > label,
+    .stCheckbox > label, .stToggle > label, .stFileUploader > label,
+    .stButton button, .stDownloadButton button {
+        color: #111111 !important;
+    }
+    .stButton button, .stDownloadButton button {
+        background-color: #f0f0f0 !important;
+        color: #111111 !important;
+        border: 1px solid #cccccc !important;
+    }
+    .stButton button:hover, .stDownloadButton button:hover {
+        background-color: #e5e5e5 !important;
+    }
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        color: #111111 !important;
+    }
+    .stNumberInput input, .stTextInput input, .stTextArea textarea {
+        background-color: #ffffff !important;
+        color: #111111 !important;
+    }
+    .stCheckbox input, .stToggle input {
+        accent-color: #111111 !important;
     }
     </style>
     """,
@@ -194,9 +222,7 @@ with st.sidebar:
     if "_config_loaded" not in st.session_state:
         st.session_state["_config_loaded"] = False
     uploaded_cfg = st.file_uploader("Upload configuration CSV", type="csv")
-    if uploaded_cfg is None:
-        st.session_state["_config_loaded"] = False
-    if uploaded_cfg is not None and not st.session_state["_config_loaded"]:
+    if uploaded_cfg is not None:
         try:
             text = uploaded_cfg.getvalue().decode("utf-8")
             reader = csv.reader(io.StringIO(text))
@@ -218,7 +244,7 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Failed to load configuration: {e}")
         finally:
-            st.session_state["_config_loaded"] = True
+            st.session_state["_config_loaded"] = False
     if st.button("Reset configuration"):
         st.session_state["config"] = default_config()
         config = st.session_state["config"]
