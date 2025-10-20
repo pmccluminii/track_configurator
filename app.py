@@ -4,7 +4,7 @@
 # - Segment length labels rotate 90° on vertical legs (left/right)
 # - Keeps: cover strip, mounting hardware per meter, U legs, Excel stock checkboxes, shortest-donor cuts, label backers
 
-import json, math, os, re
+import io, json, math, os, re
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -44,6 +44,25 @@ scroll_helper = """
 </div>
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
+
+try:
+    from svglib.svglib import svg2rlg  # type: ignore
+    from reportlab.graphics import renderPDF  # type: ignore
+    PDF_DEP_ERROR = ""
+except ImportError as e:
+    svg2rlg = None
+    renderPDF = None
+    PDF_DEP_ERROR = (
+        "PDF export requires the optional packages `svglib` and `reportlab`. "
+        "Add them to `requirements.txt` for hosted deployments. "
+        f"(Import error: {e})"
+    )
+
+def svg_to_pdf_bytes(svg_markup: str) -> bytes:
+    if svg2rlg is None or renderPDF is None:
+        raise RuntimeError(PDF_DEP_ERROR or "PDF export dependencies missing.")
+    drawing = svg2rlg(io.StringIO(svg_markup))
+    return io.BytesIO(renderPDF.drawToString(drawing)).getvalue()
 
 # =========================================================
 # Excel-driven Options
@@ -748,6 +767,21 @@ plan = compute_plan(base_spec)
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
 
+# Diagram export
+if PDF_DEP_ERROR:
+    st.info(PDF_DEP_ERROR)
+else:
+    try:
+        pdf_bytes = svg_to_pdf_bytes(svg)
+        st.download_button(
+            "Export diagram as PDF",
+            data=pdf_bytes,
+            file_name=f"{base_spec.name}_diagram.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        st.error(f"PDF export failed: {e}")
+
 # Minimum-length rule messages
 if plan.get("rules"):
     for r in plan["rules"]:
@@ -861,5 +895,3 @@ if rows:
     st.download_button("Download BOM CSV", data=csv_bytes, file_name=f"{name}_BOM.csv", mime="text/csv")
 else:
     st.write("Nothing yet for this configuration.")
-
-st.info("PDF export is temporarily unavailable in this build. Download the BOM CSV above for material lists.")
