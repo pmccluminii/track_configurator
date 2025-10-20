@@ -16,7 +16,7 @@ from shared_logic import (
 )
 
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
-st.title("Track Layout Maker — (Metric) v2.5.1")
+st.title("Track Layout Maker — (Metric) v2.5.3")
 
 with st.expander("Instructions", expanded=False):
     st.markdown(
