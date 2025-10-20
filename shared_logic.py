@@ -55,43 +55,42 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
 
     while remaining > TOL:
         placed = False
-        for s in stock_desc:
-            if abs(remaining - s) <= TOL:
-                push_len(s)
-                remaining = 0.0
-                placed = True
-                break
-        if placed:
-            continue
-
-        cut_candidate = next((s for s in stock_asc if s + TOL >= remaining), None)
-        if cut_candidate is not None:
-            segs.append(Segment(remaining, 'cut', cut_from=cut_candidate))
-            remaining = 0.0
-            continue
-
+        exact_candidates = []
+        viable = []
         for s in stock_desc:
             if remaining >= s - 1e-6:
                 if max_run_m and run_acc + s > max_run_m:
                     continue
                 leftover = round(remaining - s, 3)
+                if abs(leftover) <= TOL:
+                    exact_candidates.append((s, leftover))
+                    continue
                 # Skip choices that would create a tiny trailing piece; we'll try a smaller stock or cut instead.
                 if leftover > TOL and leftover < MIN_SEGMENT_HARD_M - 1e-9:
                     continue
-                push_len(s)
-                remaining = round(remaining - s, 3)
-                placed = True
-                break
-        if not placed:
-            cut_from = None
-            for s in stock_desc:
-                if s >= remaining - 1e-6:
-                    cut_from = s
-                    break
-            if cut_from is None:
-                cut_from = stock_desc[0]
-            segs.append(Segment(remaining, 'cut', cut_from=cut_from))
+                viable.append((s, leftover))
+        if exact_candidates:
+            s, _ = exact_candidates[0]
+            push_len(s)
             remaining = 0.0
+            placed = True
+        elif viable:
+            # Prefer choices that leave a long tail (≥ warn) to minimise short segments
+            generous = [cand for cand in viable if cand[1] >= MIN_SEGMENT_WARN_M - 1e-9]
+            pool = generous if generous else viable
+            # Choose the option that leaves the longest leftover; break ties by keeping the smaller stock
+            s, _ = max(pool, key=lambda item: (item[1], -item[0]))
+            push_len(s)
+            remaining = round(remaining - s, 3)
+            placed = True
+        if placed:
+            continue
+
+        cut_candidate = next((s for s in stock_asc if s >= remaining - 1e-6), None)
+        if cut_candidate is None:
+            cut_candidate = stock_desc[-1] if stock_desc else remaining
+        segs.append(Segment(remaining, 'cut', cut_from=cut_candidate))
+        remaining = 0.0
     return segs
 
 def accumulate_bom_for_run(segs: List[Segment]) -> Dict[str, int]:

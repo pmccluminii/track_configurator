@@ -254,12 +254,17 @@ with st.sidebar:
                 sync_session_state_from_config(config)
                 st.session_state["_uploaded_config_name"] = uploaded_cfg.name
                 st.session_state["_config_loaded_id"] = token
+                st.session_state.pop("config_file_uploader", None)
+                st.rerun()
             except Exception as e:
                 st.error(f"Failed to load configuration: {e}")
                 st.session_state["_uploaded_config_name"] = ""
                 st.session_state["_config_loaded_id"] = None
+                st.session_state.pop("config_file_uploader", None)
+                st.rerun()
     else:
         st.session_state["_config_loaded_id"] = None
+        st.session_state.pop("config_file_uploader", None)
     if st.button("Reset configuration"):
         st.session_state["confirm_reset"] = True
 
