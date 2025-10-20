@@ -47,7 +47,7 @@ scroll_helper = """
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
 
-PDF_ENGINE = None  # 'svglib' or 'cairosvg'
+PDF_ENGINE = None  # currently supports 'svglib'
 PDF_INIT_ERROR = ""
 
 try:
@@ -59,24 +59,6 @@ except Exception as e:
     PDF_INIT_ERROR = "PDF export needs the packages svglib + reportlab. Install with `pip install svglib reportlab`."
 else:
     PDF_ENGINE = "svglib"
-
-if PDF_ENGINE is None:
-    try:
-        import cairosvg  # type: ignore
-    except Exception:
-        cairosvg = None
-        if not PDF_INIT_ERROR:
-            PDF_INIT_ERROR = "PDF export requires svglib/reportlab or CairoSVG."
-    else:
-        try:
-            cairosvg.svg2pdf(bytestring=b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
-        except OSError:
-            PDF_INIT_ERROR = (
-                "CairoSVG needs the native Cairo library. Install it on your host or add svglib/reportlab to requirements."
-            )
-        else:
-            PDF_ENGINE = "cairosvg"
-            PDF_INIT_ERROR = ""
 
 # =========================================================
 # Excel-driven Options
@@ -905,14 +887,9 @@ def pdf_bytes_for_spec(spec, plan, style):
             raise RuntimeError("svglib/reportlab engine not available.")
         drawing = svg2rlg(io.StringIO(svg))
         return io.BytesIO(renderPDF.drawToString(drawing))
-    if PDF_ENGINE == "cairosvg":
-        if 'cairosvg' not in globals() or cairosvg is None:
-            raise RuntimeError("CairoSVG engine not available.")
-        pdf_data = cairosvg.svg2pdf(bytestring=svg.encode("utf-8"))
-        return io.BytesIO(pdf_data)
     raise RuntimeError(PDF_INIT_ERROR or "PDF export is unavailable.")
 
-pdf_issue = "" if PDF_ENGINE else PDF_INIT_ERROR or "PDF export is unavailable."
+pdf_issue = "" if PDF_ENGINE else (PDF_INIT_ERROR or "PDF export requires the svglib and reportlab packages.")
 col1, _ = st.columns([2,1])
 with col1:
     if st.button("Generate PDF", disabled=bool(pdf_issue)):
