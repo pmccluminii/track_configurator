@@ -47,33 +47,36 @@ scroll_helper = """
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
 
-CAIROSVG_IMPORT_ERROR = ""
-CAIROSVG_LIB_ERROR = ""
-PDF_MODE = "cairosvg"
-try:
-    import cairosvg  # type: ignore
-except ImportError:
-    cairosvg = None
-    CAIROSVG_IMPORT_ERROR = "PDF export requires the CairoSVG package. Install it with `pip install cairosvg`."
-else:
-    try:
-        cairosvg.svg2pdf(bytestring=b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
-    except OSError:
-        CAIROSVG_LIB_ERROR = "CairoSVG needs the native Cairo library."
+PDF_ENGINE = None  # 'svglib' or 'cairosvg'
+PDF_INIT_ERROR = ""
 
-if CAIROSVG_LIB_ERROR:
+try:
+    from svglib.svglib import svg2rlg  # type: ignore
+    from reportlab.graphics import renderPDF  # type: ignore
+except Exception as e:
+    svg2rlg = None
+    renderPDF = None
+    PDF_INIT_ERROR = "PDF export needs the packages svglib + reportlab. Install with `pip install svglib reportlab`."
+else:
+    PDF_ENGINE = "svglib"
+
+if PDF_ENGINE is None:
     try:
-        from weasyprint import HTML  # type: ignore
-    except ImportError:
-        HTML = None
+        import cairosvg  # type: ignore
+    except Exception:
+        cairosvg = None
+        if not PDF_INIT_ERROR:
+            PDF_INIT_ERROR = "PDF export requires svglib/reportlab or CairoSVG."
     else:
         try:
-            HTML(string="<p>test</p>").write_pdf()
-        except Exception:
-            HTML = None
-    if HTML is not None:
-        PDF_MODE = "weasyprint"
-        CAIROSVG_LIB_ERROR = ""
+            cairosvg.svg2pdf(bytestring=b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
+        except OSError:
+            PDF_INIT_ERROR = (
+                "CairoSVG needs the native Cairo library. Install it on your host or add svglib/reportlab to requirements."
+            )
+        else:
+            PDF_ENGINE = "cairosvg"
+            PDF_INIT_ERROR = ""
 
 # =========================================================
 # Excel-driven Options
@@ -897,19 +900,19 @@ else:
 # =========================================================
 def pdf_bytes_for_spec(spec, plan, style):
     svg, _, _ = render_track_svg(spec, plan, style)
-    if PDF_MODE == "weasyprint":
-        if 'HTML' not in globals() or HTML is None:
-            raise RuntimeError("WeasyPrint is unavailable for PDF export.")
-        html = f"""<html><head><meta charset='utf-8'><style>body {{ margin: 0; }}</style></head><body>{svg}</body></html>"""
-        return io.BytesIO(HTML(string=html).write_pdf())
-    if cairosvg is None:
-        raise RuntimeError(CAIROSVG_IMPORT_ERROR or "CairoSVG is not available.")
-    if CAIROSVG_LIB_ERROR:
-        raise RuntimeError(CAIROSVG_LIB_ERROR)
-    pdf_data = cairosvg.svg2pdf(bytestring=svg.encode("utf-8"))
-    return io.BytesIO(pdf_data)
+    if PDF_ENGINE == "svglib":
+        if svg2rlg is None or renderPDF is None:
+            raise RuntimeError("svglib/reportlab engine not available.")
+        drawing = svg2rlg(io.StringIO(svg))
+        return io.BytesIO(renderPDF.drawToString(drawing))
+    if PDF_ENGINE == "cairosvg":
+        if 'cairosvg' not in globals() or cairosvg is None:
+            raise RuntimeError("CairoSVG engine not available.")
+        pdf_data = cairosvg.svg2pdf(bytestring=svg.encode("utf-8"))
+        return io.BytesIO(pdf_data)
+    raise RuntimeError(PDF_INIT_ERROR or "PDF export is unavailable.")
 
-pdf_issue = CAIROSVG_IMPORT_ERROR or CAIROSVG_LIB_ERROR
+pdf_issue = "" if PDF_ENGINE else PDF_INIT_ERROR or "PDF export is unavailable."
 col1, _ = st.columns([2,1])
 with col1:
     if st.button("Generate PDF", disabled=bool(pdf_issue)):
