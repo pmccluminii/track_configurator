@@ -613,7 +613,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
 # =========================================================
 with st.sidebar:
     st.subheader("Mid-run components")
-    mid_str = st.text_area("Enter components (one per line as `pos_m:PARTNO`)", "1.0:FEED-TEE")
+    mid_str = st.text_area("Enter components (one per line as `pos_m:PARTNO`)",)
 
     st.header("Style")
     show_style = st.toggle("Show style options", value=False)
