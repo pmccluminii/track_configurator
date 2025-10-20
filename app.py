@@ -131,6 +131,7 @@ with st.sidebar:
         try:
             text = uploaded_cfg.getvalue().decode("utf-8")
             reader = csv.reader(io.StringIO(text))
+            new_cfg = default_config()
             for row in reader:
                 if len(row) < 2:
                     continue
@@ -139,9 +140,10 @@ with st.sidebar:
                     value = json.loads(raw)
                 except json.JSONDecodeError:
                     value = raw
-                config[key] = value
+                new_cfg[key] = value
             st.success("Configuration loaded.")
-            st.session_state["config"] = config
+            st.session_state["config"] = new_cfg
+            config = new_cfg
         except Exception as e:
             st.error(f"Failed to load configuration: {e}")
         finally:
