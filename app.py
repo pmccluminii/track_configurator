@@ -424,8 +424,8 @@ def render_track_svg(spec, plan, style, max_w_px=900):
             mx = x1 + ux * (mid_m * S); my = y1 + uy * (mid_m * S)
             onx, ony = outward_normal(nx, ny, mx, my, cx, cy)
             donor_len = donor_length_for_segment(s)
-            label_text = (f"{s.length_m:.2f} m" if getattr(s, "kind", "") != "cut"
-                          else f"{s.length_m:.2f} m ({donor_len:.2f}\u2009→\u2009{s.length_m:.2f})")
+            label_text = (f"{s.length_m:.2f}m" if getattr(s, "kind", "") != "cut"
+                          else f"{s.length_m:.2f}m ({donor_len:.2f}\u2009→\u2009)")
             parts.append(
                 draw_text_with_backer(
                     mx + onx*style["seg_label_off"],
