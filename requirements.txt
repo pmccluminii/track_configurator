@@ -7,5 +7,3 @@ cairocffi>=1.6
 tinycss2>=1.2
 cssselect2>=0.7
 defusedxml>=0.7
-reportlab>=3.6         # Diagram PDF export
-svglib>=1.5
