@@ -78,63 +78,77 @@ def cfg_get(key, default):
 def cfg_set(key, value):
     config[key] = value
 
+def _sync_single(key, widget_key):
+    if key in config:
+        st.session_state[widget_key] = config[key]
+
 def sync_session_state_from_config(cfg):
-    mapping = {
-        "layout_name": "cfg_layout_name",
-        "track_profile": "cfg_track_profile",
-        "finish": "cfg_finish",
-        "shape": "cfg_shape",
-        "u_leg1": "cfg_u_leg1",
-        "u_base": "cfg_u_base",
-        "u_leg3": "cfg_u_leg3",
-        "length": "cfg_length",
-        "width": "cfg_width",
-        "stock_selected": "cfg_stock_selected",
-        "max_run_text": "cfg_max_run",
-        "cover_strip_on": "cfg_cover_strip_on",
-        "cover_name": "cfg_cover_name",
-        "cover_part": "cfg_cover_part",
-        "use_mount": "cfg_use_mount",
-        "mh_name": "cfg_mh_name",
-        "mh_part": "cfg_mh_part",
-        "mh_spacing": "cfg_mh_spacing",
-        "layout_mid_components": "cfg_mid_components",
-        "show_style_options": "cfg_show_style",
-        "font_px": "cfg_font_px",
-        "track_stroke": "cfg_track_stroke",
-        "dim_stroke": "cfg_dim_stroke",
-        "node_size": "cfg_node_size",
-        "seg_label_off": "cfg_seg_label_off",
-        "join_label_off": "cfg_join_label_off",
-        "corner_label_off": "cfg_corner_label_off",
-        "end_label_off": "cfg_end_label_off",
-        "mid_label_off": "cfg_mid_label_off",
-        "dim_side_extra": "cfg_dim_side_extra",
-        "dim_offset": "cfg_dim_offset",
-        "title_offset": "cfg_title_offset",
-        "show_segment_ticks": "cfg_show_segment_ticks",
-        "tick_len": "cfg_tick_len",
-        "show_element_labels": "cfg_show_element_labels",
-        "canvas_padding": "cfg_canvas_padding",
-        "extra_top": "cfg_extra_top",
-        "extra_bottom": "cfg_extra_bottom",
-        "auto_bottom_buffer": "cfg_auto_bottom_buffer",
-        "scroll_preview": "cfg_scroll_preview",
-        "start_end": "cfg_end1",
-        "end_end": "cfg_end2",
-        "corner1": "cfg_Corner 1",
-        "corner2": "cfg_Corner 2",
-        "corner3": "cfg_Corner 3",
-    }
-    for cfg_key, widget_key in mapping.items():
-        if cfg_key in cfg:
-            st.session_state[widget_key] = cfg[cfg_key]
+    _sync_single("layout_name", "cfg_layout_name")
+    _sync_single("track_profile", "cfg_track_profile")
+    _sync_single("finish", "cfg_finish")
+    _sync_single("shape", "cfg_shape")
+    _sync_single("u_leg1", "cfg_u_leg1")
+    _sync_single("u_base", "cfg_u_base")
+    _sync_single("u_leg3", "cfg_u_leg3")
+    _sync_single("length", "cfg_length")
+    _sync_single("width", "cfg_width")
+    _sync_single("stock_selected", "cfg_stock_selected")
+    _sync_single("max_run_text", "cfg_max_run")
+    _sync_single("cover_strip_on", "cfg_cover_strip_on")
+    _sync_single("cover_name", "cfg_cover_name")
+    _sync_single("cover_part", "cfg_cover_part")
+    _sync_single("use_mount", "cfg_use_mount")
+    _sync_single("mh_name", "cfg_mh_name")
+    _sync_single("mh_part", "cfg_mh_part")
+    _sync_single("mh_spacing", "cfg_mh_spacing")
+    _sync_single("layout_mid_components", "cfg_mid_components")
+    _sync_single("show_style_options", "cfg_show_style")
+    _sync_single("font_px", "cfg_font_px")
+    _sync_single("track_stroke", "cfg_track_stroke")
+    _sync_single("dim_stroke", "cfg_dim_stroke")
+    _sync_single("node_size", "cfg_node_size")
+    _sync_single("seg_label_off", "cfg_seg_label_off")
+    _sync_single("join_label_off", "cfg_join_label_off")
+    _sync_single("corner_label_off", "cfg_corner_label_off")
+    _sync_single("end_label_off", "cfg_end_label_off")
+    _sync_single("mid_label_off", "cfg_mid_label_off")
+    _sync_single("dim_side_extra", "cfg_dim_side_extra")
+    _sync_single("dim_offset", "cfg_dim_offset")
+    _sync_single("title_offset", "cfg_title_offset")
+    _sync_single("show_segment_ticks", "cfg_show_segment_ticks")
+    _sync_single("tick_len", "cfg_tick_len")
+    _sync_single("show_element_labels", "cfg_show_element_labels")
+    _sync_single("canvas_padding", "cfg_canvas_padding")
+    _sync_single("extra_top", "cfg_extra_top")
+    _sync_single("extra_bottom", "cfg_extra_bottom")
+    _sync_single("auto_bottom_buffer", "cfg_auto_bottom_buffer")
+    _sync_single("scroll_preview", "cfg_scroll_preview")
+    _sync_single("start_end", "cfg_end1")
+    _sync_single("end_end", "cfg_end2")
+    _sync_single("corner1", "cfg_Corner 1")
+    _sync_single("corner2", "cfg_Corner 2")
+    _sync_single("corner3", "cfg_Corner 3")
     # Clear dynamic inline join keys so defaults from config apply on next render
     for key in list(st.session_state.keys()):
         if key.startswith("cfg_inline_"):
             st.session_state.pop(key, None)
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
 st.title("Track Layout Maker — (Metric) v2.5.3")
+
+st.markdown(
+    """
+    <style>
+    :root {
+        color-scheme: only light;
+    }
+    body, .stApp, .stAppViewContainer {
+        background-color: #ffffff !important;
+        color: #111111 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 with st.expander("Instructions", expanded=False):
     st.markdown(
@@ -291,22 +305,22 @@ available_track_lengths = sorted(set(track_name_to_len_all.values()))
 with st.sidebar:
     st.header("System")
     profile_options = list(PROFILE_TO_COL.keys())
-    track_profile = cfg_get("track_profile", profile_options[0] if profile_options else "")
-    track_profile = st.radio(
+    track_profile_default = cfg_get("track_profile", profile_options[0] if profile_options else "")
+    track_profile = st.selectbox(
         "Track profile",
         profile_options,
-        index=_safe_index(profile_options, track_profile),
-        horizontal=True
+        index=_safe_index(profile_options, track_profile_default),
+        key="cfg_track_profile"
     )
     cfg_set("track_profile", track_profile)
 
     finish_options = ["Black", "White"]
-    finish = cfg_get("finish", finish_options[0])
-    finish = st.radio(
+    finish_default = cfg_get("finish", finish_options[0])
+    finish = st.selectbox(
         "Finish",
         finish_options,
-        index=_safe_index(finish_options, finish),
-        horizontal=True
+        index=_safe_index(finish_options, finish_default),
+        key="cfg_finish"
     )
     cfg_set("finish", finish)
     finish_token = "BK" if finish.lower().startswith("b") else "WH"
