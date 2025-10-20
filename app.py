@@ -111,15 +111,15 @@ with st.sidebar:
 
     # U with independent legs
     if shape == "U":
-        leg1 = st.number_input("U — Leg 1 (m)", min_value=0.1, value=1.50, step=0.1, format="%.2f")
-        base = st.number_input("U — Base (m)",  min_value=0.1, value=2.00, step=0.1, format="%.2f")
-        leg3 = st.number_input("U — Leg 3 (m)", min_value=0.1, value=1.50, step=0.1, format="%.2f")
+        leg1 = st.number_input("U — Leg 1 (m)", min_value=0.1, value=1.50, step=0.01, format="%.2f")
+        base = st.number_input("U — Base (m)",  min_value=0.1, value=2.00, step=0.01, format="%.2f")
+        leg3 = st.number_input("U — Leg 3 (m)", min_value=0.1, value=1.50, step=0.01, format="%.2f")
         length = base; width = None; depth = (leg1, base, leg3)
     else:
-        length = st.number_input("Length (m)", min_value=0.1, value=5.0, step=0.1, format="%.2f")
+        length = st.number_input("Length (m)", min_value=0.1, value=5.0, step=0.01, format="%.2f")
         width = depth = None
         if shape in ("L","Rectangle"):
-            width = st.number_input("Width (m)", min_value=0.1, value=2.0, step=0.1, format="%.2f")
+            width = st.number_input("Width (m)", min_value=0.1, value=2.0, step=0.01, format="%.2f")
 
     # Stock lengths from Excel as checkboxes
     st.subheader("Stock lengths (from Excel)")
@@ -275,6 +275,14 @@ def compute_plan(spec):
     )
 
 plan = compute_plan(base_spec)
+
+# Quick banner for rule status
+if plan.get("rules"):
+    n_err = sum(1 for r in plan["rules"] if r.get("level") == "error")
+    n_warn = sum(1 for r in plan["rules"] if r.get("level") == "warn")
+    st.warning(f"Validation: {n_err} error(s), {n_warn} warning(s) found.")
+else:
+    st.success("Validation: no minimum-length issues.")
 
 def title_text_for_spec(spec, total_len, cover_on):
     parts = [spec.name, "—", spec.shape]
