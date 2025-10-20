@@ -125,6 +125,8 @@ with st.sidebar:
     if "_config_loaded" not in st.session_state:
         st.session_state["_config_loaded"] = False
     uploaded_cfg = st.file_uploader("Upload configuration CSV", type="csv")
+    if uploaded_cfg is None:
+        st.session_state["_config_loaded"] = False
     if uploaded_cfg is not None and not st.session_state["_config_loaded"]:
         try:
             text = uploaded_cfg.getvalue().decode("utf-8")
@@ -254,12 +256,12 @@ with st.sidebar:
 # =========================================================
 with st.sidebar:
     st.header("Inputs")
-    name = st.text_input("Layout Name", cfg_get("layout_name", "Layout 01"))
+    name = st.text_input("Layout Name", cfg_get("layout_name", "Layout 01"), key="cfg_layout_name")
     cfg_set("layout_name", name)
 
     shape_options = ["Straight", "L", "Rectangle", "U"]
     shape = cfg_get("shape", shape_options[0])
-    shape = st.selectbox("Shape", shape_options, index=_safe_index(shape_options, shape))
+    shape = st.selectbox("Shape", shape_options, index=_safe_index(shape_options, shape), key="cfg_shape")
     cfg_set("shape", shape)
 
     if shape == "U":
@@ -268,7 +270,8 @@ with st.sidebar:
             min_value=0.1,
             value=float(config.get("u_leg1", 1.50)),
             step=0.01,
-            format="%.2f"
+            format="%.2f",
+            key="cfg_u_leg1"
         )
         cfg_set("u_leg1", leg1)
         base = st.number_input(
@@ -276,7 +279,8 @@ with st.sidebar:
             min_value=0.1,
             value=float(config.get("u_base", 2.00)),
             step=0.01,
-            format="%.2f"
+            format="%.2f",
+            key="cfg_u_base"
         )
         cfg_set("u_base", base)
         leg3 = st.number_input(
@@ -284,7 +288,8 @@ with st.sidebar:
             min_value=0.1,
             value=float(config.get("u_leg3", 1.50)),
             step=0.01,
-            format="%.2f"
+            format="%.2f",
+            key="cfg_u_leg3"
         )
         cfg_set("u_leg3", leg3)
         length = base
@@ -297,7 +302,8 @@ with st.sidebar:
             min_value=0.1,
             value=float(config.get("length", 5.0)),
             step=0.01,
-            format="%.2f"
+            format="%.2f",
+            key="cfg_length"
         )
         cfg_set("length", length)
         width = None
@@ -308,7 +314,8 @@ with st.sidebar:
                 min_value=0.1,
                 value=float(config.get("width", 2.0)),
                 step=0.01,
-                format="%.2f"
+                format="%.2f",
+                key="cfg_width"
             )
             cfg_set("width", width_val)
             width = width_val
@@ -323,7 +330,8 @@ with st.sidebar:
         stock_selected = st.multiselect(
             "Select lengths to use",
             available_track_lengths,
-            default=default_stock
+            default=default_stock,
+            key="cfg_stock_selected"
         )
     else:
         st.info("No track lengths found in Excel ‘Track’ options. Using fallback 2 m and 1 m.")
@@ -331,7 +339,7 @@ with st.sidebar:
     stock_selected = [float(x) for x in stock_selected]
     cfg_set("stock_selected", stock_selected)
 
-    maxrun = st.text_input("Max run (m) [optional]", config.get("max_run_text", ""))
+    maxrun = st.text_input("Max run (m) [optional]", config.get("max_run_text", ""), key="cfg_max_run")
     cfg_set("max_run_text", maxrun)
 
 # Accessories
@@ -339,12 +347,13 @@ with st.sidebar:
     st.header("Accessories")
     cover_strip_on = st.toggle(
         "Include cover strip (linear, matches total track length)",
-        value=bool(config.get("cover_strip_on", False))
+        value=bool(config.get("cover_strip_on", False)),
+        key="cfg_cover_strip_on"
     )
     cfg_set("cover_strip_on", cover_strip_on)
-    cover_name_ui  = st.text_input("Cover strip name (BOM row)", config.get("cover_name", "Cover Strip (linear)"))
+    cover_name_ui  = st.text_input("Cover strip name (BOM row)", config.get("cover_name", "Cover Strip (linear)"), key="cfg_cover_name")
     cfg_set("cover_name", cover_name_ui)
-    cover_part_ui  = st.text_input("Cover strip part no (optional)", config.get("cover_part", ""))
+    cover_part_ui  = st.text_input("Cover strip part no (optional)", config.get("cover_part", ""), key="cfg_cover_part")
     cfg_set("cover_part", cover_part_ui)
 
     st.subheader("Mounting hardware (per meter)")
@@ -365,7 +374,7 @@ with st.sidebar:
                 mh_auto = {"name": str(row0[c_name]).strip(), "part": str(row0[c_pn]).strip(), "spacing_m": spacing_val}
 
     use_mount_default = config.get("use_mount", bool(mh_auto))
-    use_mount  = st.toggle("Include mounting hardware", value=use_mount_default)
+    use_mount  = st.toggle("Include mounting hardware", value=use_mount_default, key="cfg_use_mount")
     cfg_set("use_mount", use_mount)
 
     mh_name_default = config.get("mh_name", "")
@@ -379,14 +388,15 @@ with st.sidebar:
         if not spacing_default:
             spacing_default = mh_auto.get("spacing_m") or 1.0
 
-    mh_name    = st.text_input("Mounting hardware name", mh_name_default)
-    mh_part    = st.text_input("Mounting hardware part no", mh_part_default)
+    mh_name    = st.text_input("Mounting hardware name", mh_name_default, key="cfg_mh_name")
+    mh_part    = st.text_input("Mounting hardware part no", mh_part_default, key="cfg_mh_part")
     mh_spacing = st.number_input(
         "Spacing (m) between supports",
         min_value=0.1,
         value=float(spacing_default or 1.0),
         step=0.1,
-        format="%.2f"
+        format="%.2f",
+        key="cfg_mh_spacing"
     )
 
     cfg_set("mh_name", mh_name)
@@ -815,32 +825,33 @@ with st.sidebar:
     st.subheader("Mid-run components")
     mid_str = st.text_area(
         "Enter components (one per line as `pos_m:PARTNO`)",
-        config.get("layout_mid_components", "1.0:FEED-TEE")
+        config.get("layout_mid_components", "1.0:FEED-TEE"),
+        key="cfg_mid_components"
     )
     cfg_set("layout_mid_components", mid_str)
 
     st.header("Style")
-    show_style = st.toggle("Show style options", value=bool(config.get("show_style_options", False)))
+    show_style = st.toggle("Show style options", value=bool(config.get("show_style_options", False)), key="cfg_show_style")
     cfg_set("show_style_options", show_style)
 
     font_px = int(config.get("font_px", 12))
     if show_style:
-        font_px = st.slider("Font size (px)", 9, 24, font_px)
+        font_px = st.slider("Font size (px)", 9, 24, font_px, key="cfg_font_px")
     cfg_set("font_px", font_px)
 
     track_stroke = int(config.get("track_stroke", 4))
     if show_style:
-        track_stroke = st.slider("Track stroke (px)", 1, 8, track_stroke)
+        track_stroke = st.slider("Track stroke (px)", 1, 8, track_stroke, key="cfg_track_stroke")
     cfg_set("track_stroke", track_stroke)
 
     dim_stroke = int(config.get("dim_stroke", 1))
     if show_style:
-        dim_stroke = st.slider("(unused) Dimension stroke (px)", 1, 4, dim_stroke)
+        dim_stroke = st.slider("(unused) Dimension stroke (px)", 1, 4, dim_stroke, key="cfg_dim_stroke")
     cfg_set("dim_stroke", dim_stroke)
 
     node_size = int(config.get("node_size", 14))
     if show_style:
-        node_size = st.slider("Node size (px)", 4, 16, node_size)
+        node_size = st.slider("Node size (px)", 4, 16, node_size, key="cfg_node_size")
     cfg_set("node_size", node_size)
 
     seg_label_off_px = int(config.get("seg_label_off", 18))
@@ -852,12 +863,12 @@ with st.sidebar:
 
     if show_style:
         st.subheader("Label Offsets (perpendicular to track)")
-        seg_label_off_px = st.slider("Track LENGTH labels offset (px)", 2, 40, seg_label_off_px)
-        join_label_off_px = st.slider("JOIN labels offset (px)", 2, 40, join_label_off_px)
-        corner_label_off_px = st.slider("CORNER labels offset (px)", 30, 70, corner_label_off_px)
-        end_label_off_px = st.slider("END labels offset (px)", 30, 70, end_label_off_px)
-        mid_label_offset_px = st.slider("MID-COMPONENT label offset (px)", -60, 70, mid_label_offset_px)
-        dim_side_extra_px = st.slider("Extra padding for left/right dimension labels (px)", 0, 80, dim_side_extra_px)
+        seg_label_off_px = st.slider("Track LENGTH labels offset (px)", 2, 40, seg_label_off_px, key="cfg_seg_label_off")
+        join_label_off_px = st.slider("JOIN labels offset (px)", 2, 40, join_label_off_px, key="cfg_join_label_off")
+        corner_label_off_px = st.slider("CORNER labels offset (px)", 30, 70, corner_label_off_px, key="cfg_corner_label_off")
+        end_label_off_px = st.slider("END labels offset (px)", 30, 70, end_label_off_px, key="cfg_end_label_off")
+        mid_label_offset_px = st.slider("MID-COMPONENT label offset (px)", -60, 70, mid_label_offset_px, key="cfg_mid_label_off")
+        dim_side_extra_px = st.slider("Extra padding for left/right dimension labels (px)", 0, 80, dim_side_extra_px, key="cfg_dim_side_extra")
 
     cfg_set("seg_label_off", seg_label_off_px)
     cfg_set("join_label_off", join_label_off_px)
@@ -874,11 +885,11 @@ with st.sidebar:
 
     if show_style:
         st.subheader("Other")
-        dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, dim_offset_px)
-        title_offset_px = st.slider("Title offset from top (px)", -60, 150, title_offset_px)
-        show_segment_ticks = st.checkbox("Show segment boundary ticks", show_segment_ticks)
-        tick_len_px = st.slider("Tick length (px)", 4, 24, tick_len_px)
-        show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", show_element_labels)
+        dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, dim_offset_px, key="cfg_dim_offset")
+        title_offset_px = st.slider("Title offset from top (px)", -60, 150, title_offset_px, key="cfg_title_offset")
+        show_segment_ticks = st.checkbox("Show segment boundary ticks", show_segment_ticks, key="cfg_show_segment_ticks")
+        tick_len_px = st.slider("Tick length (px)", 4, 24, tick_len_px, key="cfg_tick_len")
+        show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", show_element_labels, key="cfg_show_element_labels")
 
     cfg_set("dim_offset", dim_offset_px)
     cfg_set("title_offset", title_offset_px)
@@ -895,11 +906,11 @@ with st.sidebar:
     if show_style:
         st.divider()
         st.subheader("Canvas / Cropping")
-        canvas_padding_px = st.slider("Canvas padding (px)", 100, 200, canvas_padding_px)
-        extra_top_px = st.slider("Extra top space (px)", 0, 200, extra_top_px)
-        extra_bottom_px = st.slider("Extra bottom space (px)", 0, 200, extra_bottom_px)
-        auto_bottom_buffer = st.checkbox("Auto add bottom buffer for dims/labels", auto_bottom_buffer)
-        scroll_preview = st.checkbox("Make preview scrollable", scroll_preview)
+        canvas_padding_px = st.slider("Canvas padding (px)", 100, 200, canvas_padding_px, key="cfg_canvas_padding")
+        extra_top_px = st.slider("Extra top space (px)", 0, 200, extra_top_px, key="cfg_extra_top")
+        extra_bottom_px = st.slider("Extra bottom space (px)", 0, 200, extra_bottom_px, key="cfg_extra_bottom")
+        auto_bottom_buffer = st.checkbox("Auto add bottom buffer for dims/labels", auto_bottom_buffer, key="cfg_auto_bottom_buffer")
+        scroll_preview = st.checkbox("Make preview scrollable", scroll_preview, key="cfg_scroll_preview")
 
     cfg_set("canvas_padding", canvas_padding_px)
     cfg_set("extra_top", extra_top_px)
@@ -953,8 +964,8 @@ with st.sidebar:
     default_end = end_options[0] if end_options else ""
     sel_end1_default = config.get("start_end", default_end)
     sel_end2_default = config.get("end_end", default_end)
-    sel_end1 = st.selectbox("End 1", end_options or [""], index=_safe_index(end_options or [""], sel_end1_default))
-    sel_end2 = st.selectbox("End 2", end_options or [""], index=_safe_index(end_options or [""], sel_end2_default))
+    sel_end1 = st.selectbox("End 1", end_options or [""], index=_safe_index(end_options or [""], sel_end1_default), key="cfg_end1")
+    sel_end2 = st.selectbox("End 2", end_options or [""], index=_safe_index(end_options or [""], sel_end2_default), key="cfg_end2")
     cfg_set("start_end", sel_end1)
     cfg_set("end_end", sel_end2)
 
@@ -965,7 +976,7 @@ with st.sidebar:
     corner_keys = ["corner1", "corner2", "corner3"]
     for idx, label in enumerate(corner_labels):
         stored_val = config.get(corner_keys[idx], "") if idx < len(corner_keys) else ""
-        choice = st.selectbox(label, corner_options or [""], index=_safe_index(corner_options or [""], stored_val if stored_val else (corner_options[0] if corner_options else "")))
+        choice = st.selectbox(label, corner_options or [""], index=_safe_index(corner_options or [""], stored_val if stored_val else (corner_options[0] if corner_options else "")), key=f"cfg_{label}")
         if idx < len(corner_keys):
             cfg_set(corner_keys[idx], choice)
         corner_selections.append(choice)
@@ -981,7 +992,7 @@ with st.sidebar:
         for j in inline_joins:
             lbl = j['label']
             default_join = stored_inline.get(lbl, "")
-            join_choice = st.selectbox(lbl, join_options or [""], index=_safe_index(join_options or [""], default_join))
+            join_choice = st.selectbox(lbl, join_options or [""], index=_safe_index(join_options or [""], default_join), key=f"cfg_inline_{lbl}")
             join_type_by_label[lbl] = join_choice
     else:
         st.caption("No inline joins for current geometry/stock.")
