@@ -21,9 +21,20 @@ st.title("Track Layout Maker — (Metric) v2.5.1")
 with st.expander("Instructions", expanded=False):
     st.markdown(
         """
-        - Enter the layout geometry, stock lengths, and connection selections to generate the diagram and BOM.
-        - The calculator does **not** confirm electrical loading. If a run exceeds the remote AC→48 V DC power supply’s max load, split the track (e.g. with an inline or corner isolator) and re-feed, or break it with a butt joint plus end caps and feed each section separately.
-        - Minimum-length rules apply to both legs and individual segments; adjust stock choices or cut strategies to resolve any warnings.
+        **Before you start**
+        - Gather the run dimensions you need (overall length, leg lengths, widths).
+        - Know which stock lengths you can cut from (e.g. 2 m, 1 m sticks).
+
+        **Using the calculator**
+        1. Pick the layout shape in the sidebar and type in every required dimension. For U-shapes, fill in all three legs.
+        2. Tick the stock lengths you actually have on hand so the app knows which pieces it can use.
+        3. Scroll down the sidebar to select end feeds, corners, inline joins, and enter any mid-run parts using `position:PARTNO`.
+        4. Watch the warnings banner over the preview. Anything under 0.18 m is an error; aim for 0.36 m or longer to leave room for luminaires. Adjust dimensions or stock selections if warnings appear.
+        5. When everything looks good, press **Generate PDF** to download the drawing and BOM.
+
+        **Electrical loading note**
+        - This calculator does **not** check fixture power draw. If your layout exceeds the remote AC→48 V DC supply limit, split the run with an isolator (inline or corner) and re-feed, or break the track with end caps and feed each section separately.
+        - Always confirm with your electrical guidelines that feeds, breakers, and cables are sized correctly.
         """
     )
 
