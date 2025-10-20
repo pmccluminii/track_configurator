@@ -75,11 +75,9 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
             remaining = 0.0
             placed = True
         elif viable:
-            # Prefer choices that leave a long tail (≥ warn) to minimise short segments
-            generous = [cand for cand in viable if cand[1] >= MIN_SEGMENT_WARN_M - 1e-9]
-            pool = generous if generous else viable
-            # Choose the option that leaves the longest leftover; break ties by keeping the smaller stock
-            s, _ = max(pool, key=lambda item: (item[1], -item[0]))
+            # Prefer choices that leave the smallest acceptable leftover (fewer segments) while avoiding short tails
+            pool = sorted(viable, key=lambda item: (item[1], -item[0]))
+            s, _ = pool[0]
             push_len(s)
             remaining = round(remaining - s, 3)
             placed = True
