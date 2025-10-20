@@ -75,9 +75,13 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
             remaining = 0.0
             placed = True
         elif viable:
-            # Prefer choices that leave the smallest acceptable leftover (fewer segments) while avoiding short tails
-            pool = sorted(viable, key=lambda item: (item[1], -item[0]))
-            s, _ = pool[0]
+            high = [item for item in viable if item[1] >= MIN_SEGMENT_WARN_M - 1e-9]
+            if high:
+                # Prefer smallest leftover ≥ warning threshold (reduces remainder while keeping it workable)
+                s, _ = min(high, key=lambda item: (item[1], item[0]))
+            else:
+                # No safe leftover ≥ warn; choose the option that leaves the largest possible remainder to avoid very short segments later
+                s, _ = max(viable, key=lambda item: (item[1], -item[0]))
             push_len(s)
             remaining = round(remaining - s, 3)
             placed = True
