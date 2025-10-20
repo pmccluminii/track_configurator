@@ -122,8 +122,10 @@ with st.sidebar:
         file_name=f"{cfg_get('layout_name', 'layout').replace(' ', '_')}_config.csv",
         mime="text/csv"
     )
+    if "_config_loaded" not in st.session_state:
+        st.session_state["_config_loaded"] = False
     uploaded_cfg = st.file_uploader("Upload configuration CSV", type="csv")
-    if uploaded_cfg is not None:
+    if uploaded_cfg is not None and not st.session_state["_config_loaded"]:
         try:
             text = uploaded_cfg.getvalue().decode("utf-8")
             reader = csv.reader(io.StringIO(text))
@@ -137,12 +139,14 @@ with st.sidebar:
                     value = raw
                 config[key] = value
             st.success("Configuration loaded.")
-            st.experimental_rerun()
+            st.session_state["config"] = config
         except Exception as e:
             st.error(f"Failed to load configuration: {e}")
+        finally:
+            st.session_state["_config_loaded"] = True
     if st.button("Reset configuration"):
         st.session_state["config"] = default_config()
-        st.experimental_rerun()
+        config = st.session_state["config"]
 
 # =========================================================
 # Excel-driven Options
