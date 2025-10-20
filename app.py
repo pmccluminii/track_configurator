@@ -16,7 +16,7 @@ from shared_logic import (
 )
 
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
-st.title("Track Layout Maker — Streamlit (Metric) v2.4.4")
+st.title("Track Layout Maker — (Metric) v2.5.0")
 
 # =========================================================
 # Excel-driven Options
