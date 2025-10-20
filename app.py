@@ -38,6 +38,15 @@ with st.expander("Instructions", expanded=False):
         """
     )
 
+scroll_helper = """
+<div style='margin: 8px 0;'>
+  <a href="#bom" style="text-decoration:none;">
+    <strong>Need the parts list?</strong> Click here to jump to the Bill of Materials table and download button.
+  </a>
+</div>
+"""
+st.markdown(scroll_helper, unsafe_allow_html=True)
+
 # =========================================================
 # Excel-driven Options
 # =========================================================
@@ -441,6 +450,9 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     pts_m = plan["pts"]
     seg_lens = plan["seg_lens"]
     total_len = plan["total_len"]
+    rotate_side_labels = spec.shape in {"L", "Rectangle", "U"}
+    side_label_angle = -90.0
+    dim_side_extra = style.get("dim_side_extra", 0.0)
 
     # Visual flip for U to render as "U" (not "n")
     if spec.shape == "U":
@@ -523,7 +535,8 @@ def render_track_svg(spec, plan, style, max_w_px=900):
                 parts.append(_circle(bx, by, r=style["node_size"]/2))
                 join_label = f"Join {join_counter}"
                 if style.get("show_element_labels", True):
-                    parts.append(draw_text_with_backer(bx + onx*style["join_label_off"], by + ony*style["join_label_off"], join_label, "middle", "joinLabel", px=style["font_px"]))
+                    join_rotate = side_label_angle if (rotate_side_labels and is_vertical_leg) else 0.0
+                    parts.append(draw_text_with_backer(bx + onx*style["join_label_off"], by + ony*style["join_label_off"], join_label, "middle", "joinLabel", px=style["font_px"], rotate_deg=join_rotate))
                 join_counter += 1
 
         # Segment labels (outward + rotate on vertical legs)
@@ -549,10 +562,12 @@ def render_track_svg(spec, plan, style, max_w_px=900):
 
         # Leg dimension — text only, outward (two lines)
         leg_label = f"Leg {i+1}\n{leg_len_m:.2f} m"
+        dim_base_offset = style["dim_off"] + style["font_px"]*0.2
+        dim_total_offset = dim_base_offset + (dim_side_extra if (rotate_side_labels and is_vertical_leg) else 0.0)
         parts.append(
             draw_text_with_backer(
-                midx_leg + onx_leg*(style["dim_off"] + style["font_px"]*0.2),
-                midy_leg + ony_leg*(style["dim_off"] + style["font_px"]*0.2),
+                midx_leg + onx_leg*dim_total_offset,
+                midy_leg + ony_leg*dim_base_offset,
                 leg_label, "middle", "dimLabel", px=style["font_px"]
             )
         )
@@ -565,8 +580,12 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         nx0, ny0 = node_normal(pts_px, 0); nxN, nyN = node_normal(pts_px, len(pts_px)-1)
         on0x, on0y = outward_normal(nx0, ny0, sx, sy, cx, cy)
         onNx, onNy = outward_normal(nxN, nyN, ex, ey, cx, cy)
-        parts.append(draw_text_with_backer(sx + on0x*style["end_label_off"], sy + on0y*style["end_label_off"], "End 1", "middle", "endLabel", px=style["font_px"]))
-        parts.append(draw_text_with_backer(ex + onNx*style["end_label_off"], ey + onNy*style["end_label_off"], "End 2", "middle", "endLabel", px=style["font_px"]))
+        start_vertical = rotate_side_labels and len(pts_px) >= 2 and abs(pts_px[1][0] - pts_px[0][0]) < abs(pts_px[1][1] - pts_px[0][1])
+        end_vertical = rotate_side_labels and len(pts_px) >= 2 and abs(pts_px[-1][0] - pts_px[-2][0]) < abs(pts_px[-1][1] - pts_px[-2][1])
+        start_rotate = side_label_angle if start_vertical else 0.0
+        end_rotate = side_label_angle if end_vertical else 0.0
+        parts.append(draw_text_with_backer(sx + on0x*style["end_label_off"], sy + on0y*style["end_label_off"], "End 1", "middle", "endLabel", px=style["font_px"], rotate_deg=start_rotate))
+        parts.append(draw_text_with_backer(ex + onNx*style["end_label_off"], ey + onNy*style["end_label_off"], "End 2", "middle", "endLabel", px=style["font_px"], rotate_deg=end_rotate))
 
     # Corners (outward)
     internal_nodes_idx = list(range(1, max(0, len(pts_px)-1)))
@@ -576,7 +595,9 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         if style.get("show_element_labels", True):
             nxc, nyc = node_normal(pts_px, node_i)
             onx, ony = outward_normal(nxc, nyc, px_i, py_i, cx, cy)
-            parts.append(draw_text_with_backer(px_i + onx*style["corner_label_off"], py_i + ony*style["corner_label_off"], f"Corner {idx}", "middle", "cornerLabel", px=style["font_px"]))
+            horizontal_bias = abs(onx) > abs(ony)
+            corner_rotate = side_label_angle if (rotate_side_labels and horizontal_bias) else 0.0
+            parts.append(draw_text_with_backer(px_i + onx*style["corner_label_off"], py_i + ony*style["corner_label_off"], f"Corner {idx}", "middle", "cornerLabel", px=style["font_px"], rotate_deg=corner_rotate))
 
     # Mid components
     placed = place_mid_components(base_spec.mid_components, plan["pts"])
@@ -592,7 +613,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
 # =========================================================
 with st.sidebar:
     st.subheader("Mid-run components")
-    mid_str = st.text_area("Enter components (one per line as `pos_m:PARTNO`)",)
+    mid_str = st.text_area("Enter components (one per line as `pos_m:PARTNO`)", "1.0:FEED-TEE")
 
     st.header("Style")
     show_style = st.toggle("Show style options", value=False)
@@ -608,6 +629,7 @@ with st.sidebar:
         corner_label_off_px= st.slider("CORNER labels offset (px)", 30, 70, 50)
         end_label_off_px   = st.slider("END labels offset (px)", 30, 70, 50)
         mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 70, 20)
+        dim_side_extra_px  = st.slider("Extra padding for left/right dimension labels (px)", 0, 80, 20)
 
         st.subheader("Other")
         dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, 55)
@@ -633,6 +655,7 @@ with st.sidebar:
         corner_label_off_px = 50
         end_label_off_px = 50
         mid_label_offset_px = 20
+        dim_side_extra_px = 20
         dim_offset_px = 55
         title_offset_px = 0
         show_segment_ticks = True
@@ -657,7 +680,7 @@ style = dict(
     font_px=font_px, track_stroke=track_stroke, dim_stroke=dim_stroke, node_size=node_size,
     seg_label_off=seg_label_off_px, join_label_off=join_label_off_px, corner_label_off=corner_label_off_px,
     end_label_off=end_label_off_px, mid_label_off=mid_label_offset_px,
-    dim_off=dim_offset_px, title_y=title_offset_px,
+    dim_off=dim_offset_px, dim_side_extra=dim_side_extra_px, title_y=title_offset_px,
     show_ticks=show_segment_ticks, tick_len=tick_len_px, show_element_labels=show_element_labels,
     inline_join_types={}, pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
     auto_bottom_buffer=auto_bottom_buffer, scroll_preview=scroll_preview, cover_strip_on=cover_strip_on
@@ -830,6 +853,7 @@ if use_mount and mh_name.strip() and mh_spacing and mh_spacing > 0:
 # =========================================================
 # BOM table + CSV
 # =========================================================
+st.markdown('<div id="bom"></div>', unsafe_allow_html=True)
 st.subheader("Bill of Materials")
 if rows:
     df_bom = pd.DataFrame(rows, columns=["Reference label","Name","Part no","QTY"])
@@ -848,7 +872,14 @@ def pdf_bytes_for_spec(spec, plan, style):
         import cairosvg
     except ImportError as e:
         raise RuntimeError("CairoSVG required. Install with: python3 -m pip install cairosvg") from e
-    return io.BytesIO(cairosvg.svg2pdf(bytestring=svg.encode("utf-8")))
+    try:
+        pdf_data = cairosvg.svg2pdf(bytestring=svg.encode("utf-8"))
+    except OSError as e:
+        raise RuntimeError(
+            "CairoSVG needs the native Cairo library. On macOS run `brew install cairo`; "
+            "on Linux install `libcairo2` (e.g. `sudo apt-get install libcairo2`)."
+        ) from e
+    return io.BytesIO(pdf_data)
 
 col1, _ = st.columns([2,1])
 with col1:
