@@ -605,6 +605,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         parts.append(_square(xpx, ypx, s=max(6, style["node_size"]-1)))
         parts.append(draw_text_with_backer(xpx + style["mid_label_off"] + style["font_px"]*0.2, ypx - (style["font_px"]//2), mc.part_no, "start", "midLabel", px=style["font_px"]))
 
+    parts.append(_svg_footer())
     return "\n".join(parts), int(h_out), {}
 
 # =========================================================
