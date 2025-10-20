@@ -11,7 +11,8 @@ import pandas as pd
 
 from shared_logic import (
     LayoutSpec, MidComponent, pack_segments,
-    path_points_for_shape, path_lengths, place_mid_components
+    path_points_for_shape, path_lengths, place_mid_components,
+    MIN_SEGMENT_HARD_M, MIN_SEGMENT_WARN_M
 )
 
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
@@ -217,6 +218,7 @@ def compute_plan(spec):
     Compute geometry + basic cut stats and apply minimum-length rules:
       - Standalone run (single-leg Straight): must be ≥ 0.34 m to be useful (end feed + 1 light).
       - Any leg in a multi-leg shape: hard minimum ≥ 0.18 m; to fit a light in that leg, ≥ 0.36 m.
+      - Individual segments (cuts/sticks) follow the same thresholds as legs.
     We return 'rules' with items of form {'level': 'error'|'warn', 'msg': '...'}.
     """
     pts = pts_for_spec(spec)
@@ -224,17 +226,32 @@ def compute_plan(spec):
     total_cuts = 0
     total_waste = 0.0
     rules = []
+    leg_min_hard = MIN_SEGMENT_HARD_M
+    leg_min_warn = MIN_SEGMENT_WARN_M
 
     # Cut stats (unchanged)
     for i in range(len(pts) - 1):
         leg_len = seg_lens[i]
         segs = prefer_smallest_cut(pack_segments(leg_len, spec.stock, spec.max_run_m), spec.stock)
-        for s in segs:
+        seg_count = len(segs)
+        for seg_idx, s in enumerate(segs, start=1):
+            seg_length = float(getattr(s, "length_m", 0.0))
             donor = donor_length_for_segment(s)
-            waste = max(0.0, donor - float(getattr(s, "length_m", 0.0)))
+            waste = max(0.0, donor - seg_length)
             total_waste += waste
             if getattr(s, "kind", "") == "cut":
                 total_cuts += 1
+            same_as_leg = seg_count == 1 and abs(seg_length - leg_len) < 1e-6
+            if seg_length < leg_min_hard - 1e-9 and not same_as_leg:
+                rules.append({
+                    "level": "error",
+                    "msg": f"Leg {i+1} segment {seg_idx} is {seg_length:.2f} m, below the minimum {leg_min_hard:.2f} m. Combine it with an adjacent segment or cut a longer piece."
+                })
+            elif seg_length < leg_min_warn - 1e-9 and not same_as_leg:
+                rules.append({
+                    "level": "warn",
+                    "msg": f"Leg {i+1} segment {seg_idx} is {seg_length:.2f} m. It clears {leg_min_hard:.2f} m, but to fit a light allow ≥ {leg_min_warn:.2f} m."
+                })
 
     # Minimum-length validations
     num_legs = max(0, len(pts) - 1)
@@ -254,15 +271,15 @@ def compute_plan(spec):
         # Multi-leg shapes
         for i in range(num_legs):
             Lm = seg_lens[i]
-            if Lm < 0.18 - 1e-9:
+            if Lm < leg_min_hard - 1e-9:
                 rules.append({
                     "level": "error",
-                    "msg": f"Leg {i+1} is {Lm:.2f} m, below the hard minimum 0.18 m."
+                    "msg": f"Leg {i+1} is {Lm:.2f} m, below the hard minimum {leg_min_hard:.2f} m."
                 })
-            elif Lm < 0.36 - 1e-9:
+            elif Lm < leg_min_warn - 1e-9:
                 rules.append({
                     "level": "warn",
-                    "msg": f"Leg {i+1} is {Lm:.2f} m. It clears 0.18 m, but is too short to fit a light. Use ≥ 0.36 m to allow a luminaire."
+                    "msg": f"Leg {i+1} is {Lm:.2f} m. It clears {leg_min_hard:.2f} m, but is too short to fit a light. Use ≥ {leg_min_warn:.2f} m to allow a luminaire."
                 })
 
     # Mid-component validations

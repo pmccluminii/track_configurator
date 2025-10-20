@@ -5,6 +5,8 @@ from typing import List, Dict, Tuple, Optional
 
 DEFAULT_STOCK = [2.0, 1.0]
 TOL = 0.005
+MIN_SEGMENT_HARD_M = 0.18
+MIN_SEGMENT_WARN_M = 0.36
 
 @dataclass
 class Segment:
@@ -49,6 +51,9 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
         for s in stock_sorted:
             if remaining >= s - 1e-6:
                 if max_run_m and run_acc + s > max_run_m:
+                    continue
+                leftover = round(remaining - s, 3)
+                if leftover > TOL and leftover < MIN_SEGMENT_HARD_M - 1e-9:
                     continue
                 push_len(s)
                 remaining = round(remaining - s, 3)
