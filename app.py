@@ -4,7 +4,7 @@
 # - Segment length labels rotate 90° on vertical legs (left/right)
 # - Keeps: cover strip, mounting hardware per meter, U legs, Excel stock checkboxes, shortest-donor cuts, label backers
 
-import io, json, math, os, re
+import json, math, os, re
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -30,8 +30,6 @@ with st.expander("Instructions", expanded=False):
         2. Tick the stock lengths you actually have on hand so the app knows which pieces it can use.
         3. Scroll down the sidebar to select end feeds, corners, inline joins, and enter any mid-run parts using `position:PARTNO`.
         4. Watch the warnings banner over the preview. Anything under 0.18 m is an error; aim for 0.36 m or longer to leave room for luminaires. Adjust dimensions or stock selections if warnings appear.
-        5. When everything looks good, press **Generate PDF** to download the drawing and BOM.
-
         **Electrical loading note**
         - This calculator does **not** check fixture power draw. If your layout exceeds the remote AC→48 V DC supply limit, split the run with an isolator (inline or corner) and re-feed, or break the track with end caps and feed each section separately.
         - Always confirm with your electrical guidelines that feeds, breakers, and cables are sized correctly.
@@ -46,23 +44,6 @@ scroll_helper = """
 </div>
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
-
-def ensure_pdf_engine():
-    try:
-        from svglib.svglib import svg2rlg  # type: ignore
-        from reportlab.graphics import renderPDF  # type: ignore
-        return ("svglib", svg2rlg, renderPDF, "")
-    except Exception as exc:
-        return (
-            None,
-            None,
-            None,
-            "PDF export needs the packages svglib + reportlab. "
-            "Add them to your requirements.txt and redeploy. "
-            f"(Import error: {exc})"
-        )
-
-PDF_ENGINE, svg2rlg, renderPDF, PDF_INIT_ERROR = ensure_pdf_engine()
 
 # =========================================================
 # Excel-driven Options
@@ -881,26 +862,4 @@ if rows:
 else:
     st.write("Nothing yet for this configuration.")
 
-# =========================================================
-# PDF export (SVG→PDF)
-# =========================================================
-def pdf_bytes_for_spec(spec, plan, style):
-    svg, _, _ = render_track_svg(spec, plan, style)
-    if PDF_ENGINE == "svglib":
-        if svg2rlg is None or renderPDF is None:
-            raise RuntimeError("svglib/reportlab engine not available.")
-        drawing = svg2rlg(io.StringIO(svg))
-        return io.BytesIO(renderPDF.drawToString(drawing))
-    raise RuntimeError(PDF_INIT_ERROR or "PDF export is unavailable.")
-
-pdf_issue = "" if PDF_ENGINE else (PDF_INIT_ERROR or "PDF export requires the svglib and reportlab packages.")
-col1, _ = st.columns([2,1])
-with col1:
-    if st.button("Generate PDF", disabled=bool(pdf_issue)):
-        try:
-            pdf_buf = pdf_bytes_for_spec(base_spec, plan, style)
-            st.download_button("Download PDF", data=pdf_buf, file_name=f"{base_spec.name}.pdf", mime="application/pdf")
-        except Exception as e:
-            st.error(str(e))
-if pdf_issue:
-    st.warning(f"PDF export is currently limited: {pdf_issue}")
+st.info("PDF export is temporarily unavailable in this build. Download the BOM CSV above for material lists.")
