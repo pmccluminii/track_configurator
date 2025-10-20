@@ -18,6 +18,15 @@ from shared_logic import (
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
 st.title("Track Layout Maker — (Metric) v2.5.1")
 
+with st.expander("Instructions", expanded=False):
+    st.markdown(
+        """
+        - Enter the layout geometry, stock lengths, and connection selections to generate the diagram and BOM.
+        - The calculator does **not** confirm electrical loading. If a run exceeds the remote AC→48 V DC power supply’s max load, split the track (e.g. with an inline or corner isolator) and re-feed, or break it with a butt joint plus end caps and feed each section separately.
+        - Minimum-length rules apply to both legs and individual segments; adjust stock choices or cut strategies to resolve any warnings.
+        """
+    )
+
 # =========================================================
 # Excel-driven Options
 # =========================================================
