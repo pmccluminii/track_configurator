@@ -47,33 +47,22 @@ scroll_helper = """
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
 
-@st.cache_resource(show_spinner=False)
 def ensure_pdf_engine():
-    """
-    Attempt to load the pure-Python SVG→PDF toolchain.
-    Returns dict with keys: engine, svg2rlg, renderPDF, error.
-    """
     try:
         from svglib.svglib import svg2rlg  # type: ignore
         from reportlab.graphics import renderPDF  # type: ignore
-        return {"engine": "svglib", "svg2rlg": svg2rlg, "renderPDF": renderPDF, "error": ""}
+        return ("svglib", svg2rlg, renderPDF, "")
     except Exception as exc:
-        return {
-            "engine": None,
-            "svg2rlg": None,
-            "renderPDF": None,
-            "error": (
-                "PDF export needs the packages svglib + reportlab. "
-                "Add them to your requirements.txt and redeploy. "
-                f"(Import error: {exc})"
-            )
-        }
+        return (
+            None,
+            None,
+            None,
+            "PDF export needs the packages svglib + reportlab. "
+            "Add them to your requirements.txt and redeploy. "
+            f"(Import error: {exc})"
+        )
 
-_pdf_ctx = ensure_pdf_engine()
-PDF_ENGINE = _pdf_ctx["engine"]
-svg2rlg = _pdf_ctx["svg2rlg"]
-renderPDF = _pdf_ctx["renderPDF"]
-PDF_INIT_ERROR = _pdf_ctx["error"]
+PDF_ENGINE, svg2rlg, renderPDF, PDF_INIT_ERROR = ensure_pdf_engine()
 
 # =========================================================
 # Excel-driven Options
