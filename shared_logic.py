@@ -36,6 +36,12 @@ class LayoutSpec:
     mid_components: List[MidComponent] = field(default_factory=list)
 
 def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[float]) -> List[Segment]:
+    """
+    Slice a requested length into stock pieces, preferring:
+      1. exact stock lengths (no joins),
+      2. a single cut from the smallest stick that covers the remainder,
+      3. otherwise the classic greedy selection while respecting min-segment limits.
+    """
     remaining = round(target_len_m, 3)
     segs: List[Segment] = []
     run_acc = 0.0
@@ -69,6 +75,7 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
                 if max_run_m and run_acc + s > max_run_m:
                     continue
                 leftover = round(remaining - s, 3)
+                # Skip choices that would create a tiny trailing piece; we'll try a smaller stock or cut instead.
                 if leftover > TOL and leftover < MIN_SEGMENT_HARD_M - 1e-9:
                     continue
                 push_len(s)

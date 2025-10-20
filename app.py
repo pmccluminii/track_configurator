@@ -1,4 +1,4 @@
-# app.py — v2.5.2
+# app.py — v2.5.3
 # - Text-only dimensions with outward normals
 # - Leg dimension labels are two lines ("Leg N" and "<len> m")
 # - Segment length labels rotate 90° on vertical legs (left/right)
@@ -30,6 +30,7 @@ with st.expander("Instructions", expanded=False):
         2. Tick the stock lengths you actually have on hand so the app knows which pieces it can use.
         3. Scroll down the sidebar to select end feeds, corners, inline joins, and enter any mid-run parts using `position:PARTNO`.
         4. Watch the warnings banner over the preview. Anything under 0.18 m is an error; aim for 0.36 m or longer to leave room for luminaires. Adjust dimensions or stock selections if warnings appear.
+        5. When the layout looks right, use **Download diagram as SVG** to save the drawing or grab the BOM CSV further down the page.
         **Electrical loading note**
         - This calculator does **not** check fixture power draw. If your layout exceeds the remote AC→48 V DC supply limit, split the run with an isolator (inline or corner) and re-feed, or break the track with end caps and feed each section separately.
         - Always confirm with your electrical guidelines that feeds, breakers, and cables are sized correctly.
@@ -256,7 +257,7 @@ def compute_plan(spec):
     leg_min_hard = MIN_SEGMENT_HARD_M
     leg_min_warn = MIN_SEGMENT_WARN_M
 
-    # Cut stats (unchanged)
+    # Cut stats and segment validation
     for i in range(len(pts) - 1):
         leg_len = seg_lens[i]
         segs = prefer_smallest_cut(pack_segments(leg_len, spec.stock, spec.max_run_m), spec.stock)
@@ -548,7 +549,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
             onx, ony = outward_normal(nx, ny, mx, my, cx, cy)
             donor_len = donor_length_for_segment(s)
             label_text = (f"{s.length_m:.2f}m" if getattr(s, "kind", "") != "cut"
-                          else f"{s.length_m:.2f}m ({donor_len:.2f}\u2009→\u2009)")
+                          else f"{s.length_m:.2f}m ({donor_len:.2f}C)")
             parts.append(
                 draw_text_with_backer(
                     mx + onx*style["seg_label_off"],
@@ -749,6 +750,7 @@ plan = compute_plan(base_spec)
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
 
+# Allow users to grab the raw vector artwork for external editing/printing.
 st.download_button(
     "Download diagram as SVG",
     data=svg.encode("utf-8"),
