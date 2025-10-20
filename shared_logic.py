@@ -39,7 +39,8 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
     remaining = round(target_len_m, 3)
     segs: List[Segment] = []
     run_acc = 0.0
-    stock_sorted = sorted(stock, reverse=True)
+    stock_desc = sorted(stock, reverse=True)
+    stock_asc = sorted(stock)
 
     def push_len(L):
         nonlocal run_acc
@@ -48,7 +49,22 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
 
     while remaining > TOL:
         placed = False
-        for s in stock_sorted:
+        for s in stock_desc:
+            if abs(remaining - s) <= TOL:
+                push_len(s)
+                remaining = 0.0
+                placed = True
+                break
+        if placed:
+            continue
+
+        cut_candidate = next((s for s in stock_asc if s + TOL >= remaining), None)
+        if cut_candidate is not None:
+            segs.append(Segment(remaining, 'cut', cut_from=cut_candidate))
+            remaining = 0.0
+            continue
+
+        for s in stock_desc:
             if remaining >= s - 1e-6:
                 if max_run_m and run_acc + s > max_run_m:
                     continue
@@ -61,12 +77,12 @@ def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[f
                 break
         if not placed:
             cut_from = None
-            for s in stock_sorted:
+            for s in stock_desc:
                 if s >= remaining - 1e-6:
                     cut_from = s
                     break
             if cut_from is None:
-                cut_from = stock_sorted[0]
+                cut_from = stock_desc[0]
             segs.append(Segment(remaining, 'cut', cut_from=cut_from))
             remaining = 0.0
     return segs
