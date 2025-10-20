@@ -102,16 +102,19 @@ def path_lengths(points):
 
 def place_mid_components(components: List[MidComponent], path_pts):
     seg_lens, tot = path_lengths(path_pts)
+    if not seg_lens:
+        return []
     cum = [0.0]
     for L in seg_lens: cum.append(cum[-1] + L)
     placed = []
     for mc in components:
         s = max(0.0, min(mc.pos_m, cum[-1]))
         idx = 0
-        while idx < len(seg_lens) and s > cum[idx+1] - 1e-9:
+        while idx < len(seg_lens)-1 and s > cum[idx+1] - 1e-9:
             idx += 1
+        seg_len = seg_lens[idx]
         seg_start = cum[idx]
-        t = 0 if seg_lens[idx] == 0 else (s - seg_start) / seg_lens[idx]
+        t = 0 if seg_len == 0 else (s - seg_start) / seg_len
         x1,y1 = path_pts[idx]; x2,y2 = path_pts[idx+1]
         x = x1 + t*(x2-x1); y = y1 + t*(y2-y1)
         placed.append((x,y,mc))

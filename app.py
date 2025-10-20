@@ -265,6 +265,24 @@ def compute_plan(spec):
                     "msg": f"Leg {i+1} is {Lm:.2f} m. It clears 0.18 m, but is too short to fit a light. Use ≥ 0.36 m to allow a luminaire."
                 })
 
+    # Mid-component validations
+    if getattr(spec, "mid_components", None):
+        for idx, mc in enumerate(spec.mid_components, start=1):
+            try:
+                pos_m = float(mc.pos_m)
+            except (TypeError, ValueError):
+                continue
+            if pos_m > total_len + 1e-6:
+                rules.append({
+                    "level": "warn",
+                    "msg": f"Mid component {idx} is placed at {pos_m:.2f} m, beyond the total layout length {total_len:.2f} m. It will be clamped to the end."
+                })
+            elif pos_m < -1e-6:
+                rules.append({
+                    "level": "warn",
+                    "msg": f"Mid component {idx} is placed at {pos_m:.2f} m, before the start of the run. It will be clamped to the beginning."
+                })
+
     return dict(
         pts=pts,
         seg_lens=seg_lens,
