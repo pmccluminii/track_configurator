@@ -47,6 +47,34 @@ scroll_helper = """
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
 
+CAIROSVG_IMPORT_ERROR = ""
+CAIROSVG_LIB_ERROR = ""
+PDF_MODE = "cairosvg"
+try:
+    import cairosvg  # type: ignore
+except ImportError:
+    cairosvg = None
+    CAIROSVG_IMPORT_ERROR = "PDF export requires the CairoSVG package. Install it with `pip install cairosvg`."
+else:
+    try:
+        cairosvg.svg2pdf(bytestring=b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
+    except OSError:
+        CAIROSVG_LIB_ERROR = "CairoSVG needs the native Cairo library."
+
+if CAIROSVG_LIB_ERROR:
+    try:
+        from weasyprint import HTML  # type: ignore
+    except ImportError:
+        HTML = None
+    else:
+        try:
+            HTML(string="<p>test</p>").write_pdf()
+        except Exception:
+            HTML = None
+    if HTML is not None:
+        PDF_MODE = "weasyprint"
+        CAIROSVG_LIB_ERROR = ""
+
 # =========================================================
 # Excel-driven Options
 # =========================================================
@@ -869,24 +897,26 @@ else:
 # =========================================================
 def pdf_bytes_for_spec(spec, plan, style):
     svg, _, _ = render_track_svg(spec, plan, style)
-    try:
-        import cairosvg
-    except ImportError as e:
-        raise RuntimeError("CairoSVG required. Install with: python3 -m pip install cairosvg") from e
-    try:
-        pdf_data = cairosvg.svg2pdf(bytestring=svg.encode("utf-8"))
-    except OSError as e:
-        raise RuntimeError(
-            "CairoSVG needs the native Cairo library. On macOS run `brew install cairo`; "
-            "on Linux install `libcairo2` (e.g. `sudo apt-get install libcairo2`)."
-        ) from e
+    if PDF_MODE == "weasyprint":
+        if 'HTML' not in globals() or HTML is None:
+            raise RuntimeError("WeasyPrint is unavailable for PDF export.")
+        html = f"""<html><head><meta charset='utf-8'><style>body {{ margin: 0; }}</style></head><body>{svg}</body></html>"""
+        return io.BytesIO(HTML(string=html).write_pdf())
+    if cairosvg is None:
+        raise RuntimeError(CAIROSVG_IMPORT_ERROR or "CairoSVG is not available.")
+    if CAIROSVG_LIB_ERROR:
+        raise RuntimeError(CAIROSVG_LIB_ERROR)
+    pdf_data = cairosvg.svg2pdf(bytestring=svg.encode("utf-8"))
     return io.BytesIO(pdf_data)
 
+pdf_issue = CAIROSVG_IMPORT_ERROR or CAIROSVG_LIB_ERROR
 col1, _ = st.columns([2,1])
 with col1:
-    if st.button("Generate PDF"):
+    if st.button("Generate PDF", disabled=bool(pdf_issue)):
         try:
             pdf_buf = pdf_bytes_for_spec(base_spec, plan, style)
             st.download_button("Download PDF", data=pdf_buf, file_name=f"{base_spec.name}.pdf", mime="application/pdf")
         except Exception as e:
             st.error(str(e))
+if pdf_issue:
+    st.warning(f"PDF export is currently limited: {pdf_issue}")
