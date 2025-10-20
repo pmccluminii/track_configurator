@@ -4,7 +4,7 @@
 # - Segment length labels rotate 90° on vertical legs (left/right)
 # - Keeps: cover strip, mounting hardware per meter, U legs, Excel stock checkboxes, shortest-donor cuts, label backers
 
-import io, json, math, os, re
+import io, json, math, os, re, subprocess, sys
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -47,18 +47,50 @@ scroll_helper = """
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
 
-PDF_ENGINE = None  # currently supports 'svglib'
-PDF_INIT_ERROR = ""
+@st.cache_resource(show_spinner=False)
+def ensure_pdf_engine():
+    """
+    Attempt to load the pure-Python SVG→PDF toolchain. If missing, try installing it on the fly.
+    Returns a dict with keys: engine, svg2rlg, renderPDF, error, install_log.
+    """
+    def _load():
+        from svglib.svglib import svg2rlg  # type: ignore
+        from reportlab.graphics import renderPDF  # type: ignore
+        return svg2rlg, renderPDF
 
-try:
-    from svglib.svglib import svg2rlg  # type: ignore
-    from reportlab.graphics import renderPDF  # type: ignore
-except Exception as e:
-    svg2rlg = None
-    renderPDF = None
-    PDF_INIT_ERROR = "PDF export needs the packages svglib + reportlab. Install with `pip install svglib reportlab`."
-else:
-    PDF_ENGINE = "svglib"
+    try:
+        svg2rlg_val, renderPDF_val = _load()
+        return {"engine": "svglib", "svg2rlg": svg2rlg_val, "renderPDF": renderPDF_val, "error": "", "install_log": ""}
+    except Exception as initial_err:
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "svglib", "reportlab"],
+                capture_output=True, text=True, check=True
+            )
+            install_log = proc.stdout.strip() or proc.stderr.strip()
+            svg2rlg_val, renderPDF_val = _load()
+            return {"engine": "svglib", "svg2rlg": svg2rlg_val, "renderPDF": renderPDF_val, "error": "", "install_log": install_log}
+        except Exception as install_err:
+            log = ""
+            if isinstance(install_err, subprocess.CalledProcessError):
+                log = install_err.stdout or install_err.stderr or ""
+            return {
+                "engine": None,
+                "svg2rlg": None,
+                "renderPDF": None,
+                "error": f"PDF export needs the packages svglib + reportlab ({install_err}).",
+                "install_log": log
+            }
+
+_pdf_ctx = ensure_pdf_engine()
+PDF_ENGINE = _pdf_ctx["engine"]
+svg2rlg = _pdf_ctx["svg2rlg"]
+renderPDF = _pdf_ctx["renderPDF"]
+PDF_INIT_ERROR = _pdf_ctx["error"]
+PDF_INSTALL_LOG = _pdf_ctx["install_log"]
+
+if PDF_INSTALL_LOG:
+    st.caption("PDF export dependencies installed on demand. Reload if you encounter issues.")
 
 # =========================================================
 # Excel-driven Options
