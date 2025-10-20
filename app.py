@@ -748,6 +748,13 @@ plan = compute_plan(base_spec)
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
 
+st.download_button(
+    "Download diagram as SVG",
+    data=svg.encode("utf-8"),
+    file_name=f"{base_spec.name}_diagram.svg",
+    mime="image/svg+xml"
+)
+
 # Minimum-length rule messages
 if plan.get("rules"):
     for r in plan["rules"]:
@@ -861,5 +868,3 @@ if rows:
     st.download_button("Download BOM CSV", data=csv_bytes, file_name=f"{name}_BOM.csv", mime="text/csv")
 else:
     st.write("Nothing yet for this configuration.")
-
-st.info("PDF export is temporarily unavailable in this build. Download the BOM CSV above for material lists.")
