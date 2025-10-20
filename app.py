@@ -71,6 +71,9 @@ if "base_config" not in st.session_state:
 if "config" not in st.session_state:
     st.session_state["config"] = copy.deepcopy(st.session_state["base_config"])
 
+if "_loaded_config_source" not in st.session_state:
+    st.session_state["_loaded_config_source"] = None
+
 config = st.session_state["config"]
 
 def cfg_get(key, default):
