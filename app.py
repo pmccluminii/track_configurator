@@ -1,4 +1,4 @@
-# app.py — v2.5.1
+# app.py — v2.5.2
 # - Text-only dimensions with outward normals
 # - Leg dimension labels are two lines ("Leg N" and "<len> m")
 # - Segment length labels rotate 90° on vertical legs (left/right)
@@ -522,6 +522,8 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         midx_leg = (x1 + x2) / 2; midy_leg = (y1 + y2) / 2
         onx_leg, ony_leg = outward_normal(nx, ny, midx_leg, midy_leg, cx, cy)
 
+        is_vertical_leg = abs(dy) > abs(dx)
+
         # Joins (outward)
         if len(segs) > 1:
             cum = 0.0
@@ -541,7 +543,6 @@ def render_track_svg(spec, plan, style, max_w_px=900):
 
         # Segment labels (outward + rotate on vertical legs)
         cursor_m = 0.0
-        is_vertical_leg = abs(dy) > abs(dx)
         seg_rotate = (-90.0 if is_vertical_leg else 0.0)
         for s in segs:
             mid_m = cursor_m + s.length_m/2
