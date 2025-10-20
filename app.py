@@ -223,7 +223,7 @@ with st.sidebar:
         st.session_state["_config_loaded"] = False
     if "_uploaded_config_name" not in st.session_state:
         st.session_state["_uploaded_config_name"] = ""
-    uploaded_cfg = st.file_uploader("Upload configuration CSV", type="csv")
+    uploaded_cfg = st.file_uploader("Upload configuration CSV", type="csv", key="config_file_uploader")
     if st.session_state.get("_uploaded_config_name"):
         st.caption(f"Loaded config: {st.session_state['_uploaded_config_name']}")
     if uploaded_cfg is not None:
@@ -246,9 +246,15 @@ with st.sidebar:
             config = new_cfg
             sync_session_state_from_config(config)
             st.session_state["_uploaded_config_name"] = getattr(uploaded_cfg, "name", "")
+            st.session_state["config_file_uploader"] = None
+            st.session_state["_config_loaded"] = False
+            st.rerun()
         except Exception as e:
             st.error(f"Failed to load configuration: {e}")
             st.session_state["_uploaded_config_name"] = ""
+            st.session_state["config_file_uploader"] = None
+            st.session_state["_config_loaded"] = False
+            st.rerun()
         finally:
             st.session_state["_config_loaded"] = False
     if st.button("Reset configuration"):
@@ -263,6 +269,7 @@ with st.sidebar:
                 config = st.session_state["config"]
                 sync_session_state_from_config(config)
                 st.session_state["_uploaded_config_name"] = ""
+                st.session_state["config_file_uploader"] = None
                 st.session_state["confirm_reset"] = False
                 st.rerun()
         with col_reset2:
