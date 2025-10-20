@@ -641,6 +641,14 @@ plan = compute_plan(base_spec)
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
 
+# Optional: quick debug
+with st.expander("Debug: show computed rules & leg lengths", expanded=False):
+    st.write({
+        "seg_lens_m": plan.get("seg_lens", []),
+        "total_len_m": plan.get("total_len", 0.0),
+        "rules": plan.get("rules", [])
+    })
+
 # Minimum-length rule messages
 if plan.get("rules"):
     for r in plan["rules"]:
