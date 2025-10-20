@@ -4,7 +4,7 @@
 # - Segment length labels rotate 90° on vertical legs (left/right)
 # - Keeps: cover strip, mounting hardware per meter, U legs, Excel stock checkboxes, shortest-donor cuts, label backers
 
-import json, math, os, re
+import csv, io, json, math, os, re
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -14,6 +14,69 @@ from shared_logic import (
     path_points_for_shape, path_lengths, place_mid_components,
     MIN_SEGMENT_HARD_M, MIN_SEGMENT_WARN_M
 )
+
+def default_config():
+    return {
+        "layout_name": "Layout 01",
+        "track_profile": "Surface",
+        "finish": "Black",
+        "shape": "Straight",
+        "length": 5.0,
+        "width": 2.0,
+        "u_leg1": 1.50,
+        "u_base": 2.00,
+        "u_leg3": 1.50,
+        "stock_selected": [],
+        "max_run_text": "",
+        "cover_strip_on": False,
+        "cover_name": "Cover Strip (linear)",
+        "cover_part": "",
+        "use_mount": False,
+        "mh_name": "",
+        "mh_part": "",
+        "mh_spacing": 1.0,
+        "layout_mid_components": "1.0:FEED-TEE",
+        "show_style_options": False,
+        "font_px": 12,
+        "track_stroke": 4,
+        "dim_stroke": 1,
+        "node_size": 14,
+        "seg_label_off": 18,
+        "join_label_off": 35,
+        "corner_label_off": 50,
+        "end_label_off": 50,
+        "mid_label_off": 20,
+        "dim_side_extra": 20,
+        "dim_offset": 55,
+        "title_offset": 0,
+        "show_segment_ticks": True,
+        "tick_len": 10,
+        "show_element_labels": True,
+        "canvas_padding": 140,
+        "extra_top": 30,
+        "extra_bottom": 30,
+        "auto_bottom_buffer": True,
+        "scroll_preview": True,
+        "start_end": "",
+        "end_end": "",
+        "corner1": "",
+        "corner2": "",
+        "corner3": "",
+        "inline_join_types": {},
+    }
+
+if "config" not in st.session_state:
+    st.session_state["config"] = default_config()
+
+config = st.session_state["config"]
+
+def cfg_get(key, default):
+    if key not in config:
+        config[key] = default
+    return config[key]
+
+def cfg_set(key, value):
+    config[key] = value
 
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide")
 st.title("Track Layout Maker — (Metric) v2.5.3")
@@ -31,6 +94,7 @@ with st.expander("Instructions", expanded=False):
         3. Scroll down the sidebar to select end feeds, corners, inline joins, and enter any mid-run parts using `position:PARTNO`.
         4. Watch the warnings banner over the preview. Anything under 0.18 m is an error; aim for 0.36 m or longer to leave room for luminaires. Adjust dimensions or stock selections if warnings appear.
         5. When the layout looks right, use **Download diagram as SVG** to save the drawing or grab the BOM CSV further down the page.
+
         **Electrical loading note**
         - This calculator does **not** check fixture power draw. If your layout exceeds the remote AC→48 V DC supply limit, split the run with an isolator (inline or corner) and re-feed, or break the track with end caps and feed each section separately.
         - Always confirm with your electrical guidelines that feeds, breakers, and cables are sized correctly.
@@ -45,6 +109,40 @@ scroll_helper = """
 </div>
 """
 st.markdown(scroll_helper, unsafe_allow_html=True)
+
+with st.sidebar:
+    st.header("Configuration")
+    cfg_buffer = io.StringIO()
+    writer = csv.writer(cfg_buffer)
+    for key in sorted(config.keys()):
+        writer.writerow([key, json.dumps(config[key])])
+    st.download_button(
+        "Download configuration CSV",
+        data=cfg_buffer.getvalue(),
+        file_name=f"{cfg_get('layout_name', 'layout').replace(' ', '_')}_config.csv",
+        mime="text/csv"
+    )
+    uploaded_cfg = st.file_uploader("Upload configuration CSV", type="csv")
+    if uploaded_cfg is not None:
+        try:
+            text = uploaded_cfg.getvalue().decode("utf-8")
+            reader = csv.reader(io.StringIO(text))
+            for row in reader:
+                if len(row) < 2:
+                    continue
+                key, raw = row[0], row[1]
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError:
+                    value = raw
+                config[key] = value
+            st.success("Configuration loaded.")
+            st.experimental_rerun()
+        except Exception as e:
+            st.error(f"Failed to load configuration: {e}")
+    if st.button("Reset configuration"):
+        st.session_state["config"] = default_config()
+        st.experimental_rerun()
 
 # =========================================================
 # Excel-driven Options
@@ -126,8 +224,25 @@ available_track_lengths = sorted(set(track_name_to_len_all.values()))
 # =========================================================
 with st.sidebar:
     st.header("System")
-    track_profile = st.radio("Track profile", list(PROFILE_TO_COL.keys()), index=0, horizontal=True)
-    finish = st.radio("Finish", ["Black","White"], index=0, horizontal=True)
+    profile_options = list(PROFILE_TO_COL.keys())
+    track_profile = cfg_get("track_profile", profile_options[0] if profile_options else "")
+    track_profile = st.radio(
+        "Track profile",
+        profile_options,
+        index=_safe_index(profile_options, track_profile),
+        horizontal=True
+    )
+    cfg_set("track_profile", track_profile)
+
+    finish_options = ["Black", "White"]
+    finish = cfg_get("finish", finish_options[0])
+    finish = st.radio(
+        "Finish",
+        finish_options,
+        index=_safe_index(finish_options, finish),
+        horizontal=True
+    )
+    cfg_set("finish", finish)
     finish_token = "BK" if finish.lower().startswith("b") else "WH"
 
 # =========================================================
@@ -135,42 +250,98 @@ with st.sidebar:
 # =========================================================
 with st.sidebar:
     st.header("Inputs")
-    name = st.text_input("Layout Name", "Layout 01")
-    shape = st.selectbox("Shape", ["Straight","L","Rectangle","U"], index=0)
+    name = st.text_input("Layout Name", cfg_get("layout_name", "Layout 01"))
+    cfg_set("layout_name", name)
 
-    # U with independent legs
+    shape_options = ["Straight", "L", "Rectangle", "U"]
+    shape = cfg_get("shape", shape_options[0])
+    shape = st.selectbox("Shape", shape_options, index=_safe_index(shape_options, shape))
+    cfg_set("shape", shape)
+
     if shape == "U":
-        leg1 = st.number_input("U — Leg 1 (m)", min_value=0.1, value=1.50, step=0.01, format="%.2f")
-        base = st.number_input("U — Base (m)",  min_value=0.1, value=2.00, step=0.01, format="%.2f")
-        leg3 = st.number_input("U — Leg 3 (m)", min_value=0.1, value=1.50, step=0.01, format="%.2f")
-        length = base; width = None; depth = (leg1, base, leg3)
+        leg1 = st.number_input(
+            "U — Leg 1 (m)",
+            min_value=0.1,
+            value=float(config.get("u_leg1", 1.50)),
+            step=0.01,
+            format="%.2f"
+        )
+        cfg_set("u_leg1", leg1)
+        base = st.number_input(
+            "U — Base (m)",
+            min_value=0.1,
+            value=float(config.get("u_base", 2.00)),
+            step=0.01,
+            format="%.2f"
+        )
+        cfg_set("u_base", base)
+        leg3 = st.number_input(
+            "U — Leg 3 (m)",
+            min_value=0.1,
+            value=float(config.get("u_leg3", 1.50)),
+            step=0.01,
+            format="%.2f"
+        )
+        cfg_set("u_leg3", leg3)
+        length = base
+        width = None
+        depth = (leg1, base, leg3)
+        cfg_set("length", length)
     else:
-        length = st.number_input("Length (m)", min_value=0.1, value=5.0, step=0.01, format="%.2f")
-        width = depth = None
-        if shape in ("L","Rectangle"):
-            width = st.number_input("Width (m)", min_value=0.1, value=2.0, step=0.01, format="%.2f")
+        length = st.number_input(
+            "Length (m)",
+            min_value=0.1,
+            value=float(config.get("length", 5.0)),
+            step=0.01,
+            format="%.2f"
+        )
+        cfg_set("length", length)
+        width = None
+        depth = None
+        if shape in ("L", "Rectangle"):
+            width_val = st.number_input(
+                "Width (m)",
+                min_value=0.1,
+                value=float(config.get("width", 2.0)),
+                step=0.01,
+                format="%.2f"
+            )
+            cfg_set("width", width_val)
+            width = width_val
+        else:
+            width = width
 
-    # Stock lengths from Excel as checkboxes
     st.subheader("Stock lengths (from Excel)")
-    stock_selected = []
     if available_track_lengths:
-        cols = st.columns(min(3, len(available_track_lengths)))
-        for idx, L in enumerate(available_track_lengths):
-            with cols[idx % len(cols)]:
-                if st.checkbox(f"{L:.2f} m", value=True, key=f"stock_{L}"):
-                    stock_selected.append(float(L))
+        default_stock = config.get("stock_selected", [])
+        if not default_stock:
+            default_stock = available_track_lengths
+        stock_selected = st.multiselect(
+            "Select lengths to use",
+            available_track_lengths,
+            default=default_stock
+        )
     else:
         st.info("No track lengths found in Excel ‘Track’ options. Using fallback 2 m and 1 m.")
-        stock_selected = [2.0, 1.0]
+        stock_selected = config.get("stock_selected", [2.0, 1.0]) or [2.0, 1.0]
+    stock_selected = [float(x) for x in stock_selected]
+    cfg_set("stock_selected", stock_selected)
 
-    maxrun = st.text_input("Max run (m) [optional]", "")
+    maxrun = st.text_input("Max run (m) [optional]", config.get("max_run_text", ""))
+    cfg_set("max_run_text", maxrun)
 
 # Accessories
 with st.sidebar:
     st.header("Accessories")
-    cover_strip_on = st.toggle("Include cover strip (linear, matches total track length)", value=False)
-    cover_name_ui  = st.text_input("Cover strip name (BOM row)", "Cover Strip (linear)")
-    cover_part_ui  = st.text_input("Cover strip part no (optional)", "")
+    cover_strip_on = st.toggle(
+        "Include cover strip (linear, matches total track length)",
+        value=bool(config.get("cover_strip_on", False))
+    )
+    cfg_set("cover_strip_on", cover_strip_on)
+    cover_name_ui  = st.text_input("Cover strip name (BOM row)", config.get("cover_name", "Cover Strip (linear)"))
+    cfg_set("cover_name", cover_name_ui)
+    cover_part_ui  = st.text_input("Cover strip part no (optional)", config.get("cover_part", ""))
+    cfg_set("cover_part", cover_part_ui)
 
     st.subheader("Mounting hardware (per meter)")
     mh_auto = None
@@ -189,10 +360,34 @@ with st.sidebar:
                 except: spacing_val = None
                 mh_auto = {"name": str(row0[c_name]).strip(), "part": str(row0[c_pn]).strip(), "spacing_m": spacing_val}
 
-    use_mount  = st.toggle("Include mounting hardware", value=bool(mh_auto))
-    mh_name    = st.text_input("Mounting hardware name", mh_auto["name"] if (use_mount and mh_auto) else "")
-    mh_part    = st.text_input("Mounting hardware part no", mh_auto["part"] if (use_mount and mh_auto) else "")
-    mh_spacing = st.number_input("Spacing (m) between supports", min_value=0.1, value=float(mh_auto["spacing_m"]) if (use_mount and mh_auto and mh_auto["spacing_m"]) else 1.00, step=0.1, format="%.2f")
+    use_mount_default = config.get("use_mount", bool(mh_auto))
+    use_mount  = st.toggle("Include mounting hardware", value=use_mount_default)
+    cfg_set("use_mount", use_mount)
+
+    mh_name_default = config.get("mh_name", "")
+    mh_part_default = config.get("mh_part", "")
+    spacing_default = config.get("mh_spacing", mh_auto.get("spacing_m") if mh_auto else 1.0)
+    if use_mount and mh_auto:
+        if not mh_name_default:
+            mh_name_default = mh_auto["name"]
+        if not mh_part_default:
+            mh_part_default = mh_auto["part"]
+        if not spacing_default:
+            spacing_default = mh_auto.get("spacing_m") or 1.0
+
+    mh_name    = st.text_input("Mounting hardware name", mh_name_default)
+    mh_part    = st.text_input("Mounting hardware part no", mh_part_default)
+    mh_spacing = st.number_input(
+        "Spacing (m) between supports",
+        min_value=0.1,
+        value=float(spacing_default or 1.0),
+        step=0.1,
+        format="%.2f"
+    )
+
+    cfg_set("mh_name", mh_name)
+    cfg_set("mh_part", mh_part)
+    cfg_set("mh_spacing", float(mh_spacing))
 
 # Base spec
 base_spec = LayoutSpec(
@@ -614,67 +809,109 @@ def render_track_svg(spec, plan, style, max_w_px=900):
 # =========================================================
 with st.sidebar:
     st.subheader("Mid-run components")
-    mid_str = st.text_area("Enter components (one per line as `pos_m:PARTNO`)",)
+    mid_str = st.text_area(
+        "Enter components (one per line as `pos_m:PARTNO`)",
+        config.get("layout_mid_components", "1.0:FEED-TEE")
+    )
+    cfg_set("layout_mid_components", mid_str)
 
     st.header("Style")
-    show_style = st.toggle("Show style options", value=False)
+    show_style = st.toggle("Show style options", value=bool(config.get("show_style_options", False)))
+    cfg_set("show_style_options", show_style)
+
+    font_px = int(config.get("font_px", 12))
     if show_style:
-        font_px = st.slider("Font size (px)", 9, 24, 12)
-        track_stroke = st.slider("Track stroke (px)", 1, 8, 4)
-        dim_stroke = st.slider("(unused) Dimension stroke (px)", 1, 4, 1)  # compatibility only
-        node_size = st.slider("Node size (px)", 4, 16, 14)
+        font_px = st.slider("Font size (px)", 9, 24, font_px)
+    cfg_set("font_px", font_px)
 
+    track_stroke = int(config.get("track_stroke", 4))
+    if show_style:
+        track_stroke = st.slider("Track stroke (px)", 1, 8, track_stroke)
+    cfg_set("track_stroke", track_stroke)
+
+    dim_stroke = int(config.get("dim_stroke", 1))
+    if show_style:
+        dim_stroke = st.slider("(unused) Dimension stroke (px)", 1, 4, dim_stroke)
+    cfg_set("dim_stroke", dim_stroke)
+
+    node_size = int(config.get("node_size", 14))
+    if show_style:
+        node_size = st.slider("Node size (px)", 4, 16, node_size)
+    cfg_set("node_size", node_size)
+
+    seg_label_off_px = int(config.get("seg_label_off", 18))
+    join_label_off_px = int(config.get("join_label_off", 35))
+    corner_label_off_px = int(config.get("corner_label_off", 50))
+    end_label_off_px = int(config.get("end_label_off", 50))
+    mid_label_offset_px = int(config.get("mid_label_off", 20))
+    dim_side_extra_px = int(config.get("dim_side_extra", 20))
+
+    if show_style:
         st.subheader("Label Offsets (perpendicular to track)")
-        seg_label_off_px   = st.slider("Track LENGTH labels offset (px)", 2, 40, 18)
-        join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 35)
-        corner_label_off_px= st.slider("CORNER labels offset (px)", 30, 70, 50)
-        end_label_off_px   = st.slider("END labels offset (px)", 30, 70, 50)
-        mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 70, 20)
-        dim_side_extra_px  = st.slider("Extra padding for left/right dimension labels (px)", 0, 80, 20)
+        seg_label_off_px = st.slider("Track LENGTH labels offset (px)", 2, 40, seg_label_off_px)
+        join_label_off_px = st.slider("JOIN labels offset (px)", 2, 40, join_label_off_px)
+        corner_label_off_px = st.slider("CORNER labels offset (px)", 30, 70, corner_label_off_px)
+        end_label_off_px = st.slider("END labels offset (px)", 30, 70, end_label_off_px)
+        mid_label_offset_px = st.slider("MID-COMPONENT label offset (px)", -60, 70, mid_label_offset_px)
+        dim_side_extra_px = st.slider("Extra padding for left/right dimension labels (px)", 0, 80, dim_side_extra_px)
 
+    cfg_set("seg_label_off", seg_label_off_px)
+    cfg_set("join_label_off", join_label_off_px)
+    cfg_set("corner_label_off", corner_label_off_px)
+    cfg_set("end_label_off", end_label_off_px)
+    cfg_set("mid_label_off", mid_label_offset_px)
+    cfg_set("dim_side_extra", dim_side_extra_px)
+
+    dim_offset_px = int(config.get("dim_offset", 55))
+    title_offset_px = int(config.get("title_offset", 0))
+    show_segment_ticks = bool(config.get("show_segment_ticks", True))
+    tick_len_px = int(config.get("tick_len", 10))
+    show_element_labels = bool(config.get("show_element_labels", True))
+
+    if show_style:
         st.subheader("Other")
-        dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, 55)
-        title_offset_px = st.slider("Title offset from top (px)", -60, 150, 0)
-        show_segment_ticks = st.checkbox("Show segment boundary ticks", True)
-        tick_len_px = st.slider("Tick length (px)", 4, 24, 10)
-        show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", True)
+        dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, dim_offset_px)
+        title_offset_px = st.slider("Title offset from top (px)", -60, 150, title_offset_px)
+        show_segment_ticks = st.checkbox("Show segment boundary ticks", show_segment_ticks)
+        tick_len_px = st.slider("Tick length (px)", 4, 24, tick_len_px)
+        show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", show_element_labels)
 
+    cfg_set("dim_offset", dim_offset_px)
+    cfg_set("title_offset", title_offset_px)
+    cfg_set("show_segment_ticks", show_segment_ticks)
+    cfg_set("tick_len", tick_len_px)
+    cfg_set("show_element_labels", show_element_labels)
+
+    canvas_padding_px = int(config.get("canvas_padding", 140))
+    extra_top_px = int(config.get("extra_top", 30))
+    extra_bottom_px = int(config.get("extra_bottom", 30))
+    auto_bottom_buffer = bool(config.get("auto_bottom_buffer", True))
+    scroll_preview = bool(config.get("scroll_preview", True))
+
+    if show_style:
         st.divider()
         st.subheader("Canvas / Cropping")
-        canvas_padding_px = st.slider("Canvas padding (px)", 100, 200, 140)
-        extra_top_px      = st.slider("Extra top space (px)", 0, 200, 30)
-        extra_bottom_px   = st.slider("Extra bottom space (px)", 0, 200, 30)
-        auto_bottom_buffer= st.checkbox("Auto add bottom buffer for dims/labels", True)
-        scroll_preview    = st.checkbox("Make preview scrollable", True)
-    else:
-        font_px = 12
-        track_stroke = 4
-        dim_stroke = 1
-        node_size = 14
-        seg_label_off_px = 18
-        join_label_off_px = 35
-        corner_label_off_px = 50
-        end_label_off_px = 50
-        mid_label_offset_px = 20
-        dim_side_extra_px = 20
-        dim_offset_px = 55
-        title_offset_px = 0
-        show_segment_ticks = True
-        tick_len_px = 10
-        show_element_labels = True
-        canvas_padding_px = 140
-        extra_top_px = 30
-        extra_bottom_px = 30
-        auto_bottom_buffer = True
-        scroll_preview = True
+        canvas_padding_px = st.slider("Canvas padding (px)", 100, 200, canvas_padding_px)
+        extra_top_px = st.slider("Extra top space (px)", 0, 200, extra_top_px)
+        extra_bottom_px = st.slider("Extra bottom space (px)", 0, 200, extra_bottom_px)
+        auto_bottom_buffer = st.checkbox("Auto add bottom buffer for dims/labels", auto_bottom_buffer)
+        scroll_preview = st.checkbox("Make preview scrollable", scroll_preview)
+
+    cfg_set("canvas_padding", canvas_padding_px)
+    cfg_set("extra_top", extra_top_px)
+    cfg_set("extra_bottom", extra_bottom_px)
+    cfg_set("auto_bottom_buffer", auto_bottom_buffer)
+    cfg_set("scroll_preview", scroll_preview)
 
 # Parse mids
-base_spec.mid_components = []
+parsed_mid_components = []
 for line in [l.strip() for l in mid_str.splitlines() if l.strip()]:
     try:
         pos, pn = line.split(":",1)
-        base_spec.mid_components.append(MidComponent(float(pos.strip()), pn.strip()))
-    except: pass
+        parsed_mid_components.append(MidComponent(float(pos.strip()), pn.strip()))
+    except Exception:
+        pass
+base_spec.mid_components = parsed_mid_components
 
 # Style dict
 style = dict(
@@ -683,7 +920,7 @@ style = dict(
     end_label_off=end_label_off_px, mid_label_off=mid_label_offset_px,
     dim_off=dim_offset_px, dim_side_extra=dim_side_extra_px, title_y=title_offset_px,
     show_ticks=show_segment_ticks, tick_len=tick_len_px, show_element_labels=show_element_labels,
-    inline_join_types={}, pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
+    inline_join_types=config.get("inline_join_types", {}), pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
     auto_bottom_buffer=auto_bottom_buffer, scroll_preview=scroll_preview, cover_strip_on=cover_strip_on
 )
 
@@ -709,27 +946,42 @@ with st.sidebar:
     st.header("Connections (per element)")
     base_key = f"{name}|{shape}|{length}|{(width if width is not None else '')}|{(depth if depth is not None else '')}|{track_profile}|{finish}"
     end_options = options_by_type.get("End", [])
-    key_e1 = f"{base_key}:End 1"; key_e2 = f"{base_key}:End 2"
     default_end = end_options[0] if end_options else ""
-    sel_end1 = st.selectbox("End 1", end_options or [""], index=_safe_index(end_options or [""], default_end), key=key_e1)
-    sel_end2 = st.selectbox("End 2", end_options or [""], index=_safe_index(end_options or [""], default_end), key=key_e2)
+    sel_end1_default = config.get("start_end", default_end)
+    sel_end2_default = config.get("end_end", default_end)
+    sel_end1 = st.selectbox("End 1", end_options or [""], index=_safe_index(end_options or [""], sel_end1_default))
+    sel_end2 = st.selectbox("End 2", end_options or [""], index=_safe_index(end_options or [""], sel_end2_default))
+    cfg_set("start_end", sel_end1)
+    cfg_set("end_end", sel_end2)
 
     corner_options = options_by_type.get("Corner") or options_by_type.get("Join") or []
     internal_nodes = list(range(1, max(0, len(pts_ui)-1)))
     corner_labels = [f"Corner {i}" for i,_ in enumerate(internal_nodes, start=1)]
     corner_selections = []
-    for label in corner_labels:
-        corner_selections.append(st.selectbox(label, corner_options or [""], index=_safe_index(corner_options or [""], corner_options[0] if corner_options else "")))
+    corner_keys = ["corner1", "corner2", "corner3"]
+    for idx, label in enumerate(corner_labels):
+        stored_val = config.get(corner_keys[idx], "") if idx < len(corner_keys) else ""
+        choice = st.selectbox(label, corner_options or [""], index=_safe_index(corner_options or [""], stored_val if stored_val else (corner_options[0] if corner_options else "")))
+        if idx < len(corner_keys):
+            cfg_set(corner_keys[idx], choice)
+        corner_selections.append(choice)
+    for idx in range(len(corner_keys)):
+        if idx >= len(corner_selections):
+            cfg_set(corner_keys[idx], "")
 
     st.subheader("Inline joins (stock boundaries)")
     join_options = options_by_type.get("Join", [])
+    stored_inline = config.get("inline_join_types", {})
     join_type_by_label = {}
     if inline_joins:
         for j in inline_joins:
             lbl = j['label']
-            join_type_by_label[lbl] = st.selectbox(lbl, join_options or [""], index=0, key=f"{base_key}:{lbl}")
+            default_join = stored_inline.get(lbl, "")
+            join_choice = st.selectbox(lbl, join_options or [""], index=_safe_index(join_options or [""], default_join))
+            join_type_by_label[lbl] = join_choice
     else:
         st.caption("No inline joins for current geometry/stock.")
+    cfg_set("inline_join_types", join_type_by_label)
     style["inline_join_types"] = join_type_by_label
 
 # Update spec selections
@@ -737,11 +989,12 @@ base_spec = LayoutSpec(
     name=name, shape=shape, length_m=length, width_m=width, depth_m=depth,
     stock=stock_selected or [2.0, 1.0],
     max_run_m=float(maxrun) if str(maxrun).strip() else None,
-    start_end=sel_end1, end_end=sel_end2,
-    corner1_join=corner_selections[0] if len(corner_selections) >= 1 else "",
-    corner2_join=corner_selections[1] if len(corner_selections) >= 2 else "",
-    corner3_join=corner_selections[2] if len(corner_selections) >= 3 else "",
-    mid_components=base_spec.mid_components
+    start_end=sel_end1,
+    end_end=sel_end2,
+    corner1_join=corner_selections[0] if len(corner_selections) >= 1 else config.get("corner1", ""),
+    corner2_join=corner_selections[1] if len(corner_selections) >= 2 else config.get("corner2", ""),
+    corner3_join=corner_selections[2] if len(corner_selections) >= 3 else config.get("corner3", ""),
+    mid_components=parsed_mid_components
 )
 
 # Recompute plan & render
