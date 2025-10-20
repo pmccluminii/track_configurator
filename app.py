@@ -490,10 +490,10 @@ with st.sidebar:
     node_size = st.slider("Node size (px)", 4, 16, 14)
 
     st.subheader("Label Offsets (perpendicular to track)")
-    seg_label_off_px   = st.slider("Track LENGTH labels offset (px)", 2, 40, 22)
-    join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 35)
-    corner_label_off_px= st.slider("CORNER labels offset (px)", 2, 50, 45)
-    end_label_off_px   = st.slider("END labels offset (px)", 2, 40, 35)
+    seg_label_off_px   = st.slider("Track LENGTH labels offset (px)", 2, 40, 18)
+    join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 30)
+    corner_label_off_px= st.slider("CORNER labels offset (px)", 2, 50, 40)
+    end_label_off_px   = st.slider("END labels offset (px)", 2, 60, 50)
     mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 60, 14)
 
     st.subheader("Other")
