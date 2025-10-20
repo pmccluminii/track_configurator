@@ -213,18 +213,66 @@ def donor_length_for_segment(s):
         return float(getattr(s, "length_m", 0.0))
 
 def compute_plan(spec):
+    """
+    Compute geometry + basic cut stats and apply minimum-length rules:
+      - Standalone run (single-leg Straight): must be ≥ 0.34 m to be useful (end feed + 1 light).
+      - Any leg in a multi-leg shape: hard minimum ≥ 0.18 m; to fit a light in that leg, ≥ 0.36 m.
+    We return 'rules' with items of form {'level': 'error'|'warn', 'msg': '...'}.
+    """
     pts = pts_for_spec(spec)
     seg_lens, total_len = path_lengths(pts)
-    total_cuts = 0; total_waste = 0.0
-    for i in range(len(pts)-1):
+    total_cuts = 0
+    total_waste = 0.0
+    rules = []
+
+    # Cut stats (unchanged)
+    for i in range(len(pts) - 1):
         leg_len = seg_lens[i]
         segs = prefer_smallest_cut(pack_segments(leg_len, spec.stock, spec.max_run_m), spec.stock)
         for s in segs:
             donor = donor_length_for_segment(s)
             waste = max(0.0, donor - float(getattr(s, "length_m", 0.0)))
             total_waste += waste
-            if getattr(s, "kind", "") == "cut": total_cuts += 1
-    return dict(pts=pts, seg_lens=seg_lens, total_len=total_len, total_cuts=total_cuts, total_excess=total_waste)
+            if getattr(s, "kind", "") == "cut":
+                total_cuts += 1
+
+    # Minimum-length validations
+    num_legs = max(0, len(pts) - 1)
+    if spec.shape == "Straight" and num_legs == 1:
+        run_len = seg_lens[0] if seg_lens else 0.0
+        if run_len < 0.34 - 1e-9:
+            rules.append({
+                "level": "error",
+                "msg": f"Standalone run is {run_len:.2f} m, below the minimum 0.34 m needed for an end feed + 1 light."
+            })
+        elif run_len < 0.36 - 1e-9:
+            rules.append({
+                "level": "warn",
+                "msg": f"Standalone run is {run_len:.2f} m. It meets 0.34 m minimum, but to fit a light comfortably use ≥ 0.36 m."
+            })
+    else:
+        # Multi-leg shapes
+        for i in range(num_legs):
+            Lm = seg_lens[i]
+            if Lm < 0.18 - 1e-9:
+                rules.append({
+                    "level": "error",
+                    "msg": f"Leg {i+1} is {Lm:.2f} m, below the hard minimum 0.18 m."
+                })
+            elif Lm < 0.36 - 1e-9:
+                rules.append({
+                    "level": "warn",
+                    "msg": f"Leg {i+1} is {Lm:.2f} m. It clears 0.18 m, but is too short to fit a light. Use ≥ 0.36 m to allow a luminaire."
+                })
+
+    return dict(
+        pts=pts,
+        seg_lens=seg_lens,
+        total_len=total_len,
+        total_cuts=total_cuts,
+        total_excess=total_waste,
+        rules=rules
+    )
 
 plan = compute_plan(base_spec)
 
@@ -491,10 +539,10 @@ with st.sidebar:
 
     st.subheader("Label Offsets (perpendicular to track)")
     seg_label_off_px   = st.slider("Track LENGTH labels offset (px)", 2, 40, 18)
-    join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 30)
-    corner_label_off_px= st.slider("CORNER labels offset (px)", 2, 50, 40)
-    end_label_off_px   = st.slider("END labels offset (px)", 2, 60, 50)
-    mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 60, 14)
+    join_label_off_px  = st.slider("JOIN labels offset (px)", 2, 40, 35)
+    corner_label_off_px= st.slider("CORNER labels offset (px)", 30, 70, 50)
+    end_label_off_px   = st.slider("END labels offset (px)", 30, 70, 50)
+    mid_label_offset_px= st.slider("MID-COMPONENT label offset (px)", -60, 70, 20)
 
     st.subheader("Other")
     dim_offset_px = st.slider("Dimension offset from line (px)", 6, 70, 55)
@@ -589,8 +637,19 @@ base_spec = LayoutSpec(
 
 # Recompute plan & render
 plan = compute_plan(base_spec)
+
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
+
+# Minimum-length rule messages
+if plan.get("rules"):
+    for r in plan["rules"]:
+        if r.get("level") == "error":
+            st.error(r.get("msg", ""))
+        elif r.get("level") == "warn":
+            st.warning(r.get("msg", ""))
+        else:
+            st.info(r.get("msg", ""))
 
 # =========================================================
 # Build BOM
