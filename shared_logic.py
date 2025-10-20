@@ -36,64 +36,69 @@ class LayoutSpec:
     mid_components: List[MidComponent] = field(default_factory=list)
 
 def pack_segments(target_len_m: float, stock: List[float], max_run_m: Optional[float]) -> List[Segment]:
-    """
-    Slice a requested length into stock pieces, preferring:
-      1. exact stock lengths (no joins),
-      2. a single cut from the smallest stick that covers the remainder,
-      3. otherwise the classic greedy selection while respecting min-segment limits.
-    """
-    remaining = round(target_len_m, 3)
-    segs: List[Segment] = []
-    run_acc = 0.0
+    stock = [float(s) for s in stock]
     stock_desc = sorted(stock, reverse=True)
-    stock_asc = sorted(stock)
+    if not stock_desc:
+        return []
+    target = round(target_len_m, 3)
 
-    def push_len(L):
-        nonlocal run_acc
-        segs.append(Segment(L, 'stock'))
-        run_acc += L
+    def score_plan(plan: List[Segment]):
+        short_pen = sum(1 for seg in plan if seg.length_m < MIN_SEGMENT_WARN_M - 1e-9)
+        cut_pen = sum(1 for seg in plan if seg.kind == 'cut')
+        seg_count = len(plan)
+        waste = sum((seg.cut_from - seg.length_m) for seg in plan if seg.kind == 'cut' and seg.cut_from)
+        return (short_pen, cut_pen, seg_count, waste)
 
-    while remaining > TOL:
-        placed = False
-        exact_candidates = []
-        viable = []
+    from functools import lru_cache
+
+    @lru_cache(None)
+    def best_plan(rem: float, used: float):
+        rem = round(rem, 3)
+        if rem <= TOL:
+            return []
+        if rem < MIN_SEGMENT_HARD_M - TOL:
+            return None
+        best = None
+        best_score = None
+
         for s in stock_desc:
-            if remaining >= s - 1e-6:
-                if max_run_m and run_acc + s > max_run_m:
+            # final cut option
+            if rem <= s + TOL:
+                if max_run_m and used + rem > max_run_m + TOL:
+                    pass
+                else:
+                    waste = max(0.0, s - rem)
+                    seg_kind = 'stock' if waste <= TOL else 'cut'
+                    seg = Segment(rem, seg_kind, cut_from=None if seg_kind == 'stock' else s)
+                    plan = [seg]
+                    score = score_plan(plan)
+                    if best is None or score < best_score:
+                        best, best_score = plan, score
+                    if abs(rem - s) <= TOL:
+                        break
+            # stock piece option
+            if rem >= s - TOL and rem - s >= -TOL:
+                new_used = used + s
+                if max_run_m and new_used > max_run_m + TOL:
                     continue
-                leftover = round(remaining - s, 3)
-                if abs(leftover) <= TOL:
-                    exact_candidates.append((s, leftover))
+                new_rem = max(0.0, round(rem - s, 3))
+                sub = best_plan(new_rem, new_used)
+                if sub is None:
                     continue
-                # Skip choices that would create a tiny trailing piece; we'll try a smaller stock or cut instead.
-                if leftover > TOL and leftover < MIN_SEGMENT_HARD_M - 1e-9:
-                    continue
-                viable.append((s, leftover))
-        if exact_candidates:
-            s, _ = exact_candidates[0]
-            push_len(s)
-            remaining = 0.0
-            placed = True
-        elif viable:
-            high = [item for item in viable if item[1] >= MIN_SEGMENT_WARN_M - 1e-9]
-            if high:
-                # Prefer smallest leftover ≥ warning threshold (reduces remainder while keeping it workable)
-                s, _ = min(high, key=lambda item: (item[1], item[0]))
-            else:
-                # No safe leftover ≥ warn; choose the option that leaves the largest possible remainder to avoid very short segments later
-                s, _ = max(viable, key=lambda item: (item[1], -item[0]))
-            push_len(s)
-            remaining = round(remaining - s, 3)
-            placed = True
-        if placed:
-            continue
+                plan = [Segment(s, 'stock')] + sub
+                score = score_plan(plan)
+                if best is None or score < best_score:
+                    best, best_score = plan, score
+        return best
 
-        cut_candidate = next((s for s in stock_asc if s >= remaining - 1e-6), None)
-        if cut_candidate is None:
-            cut_candidate = stock_desc[-1] if stock_desc else remaining
-        segs.append(Segment(remaining, 'cut', cut_from=cut_candidate))
-        remaining = 0.0
-    return segs
+    plan = best_plan(target, 0.0)
+    if plan is None:
+        return []
+    for seg in plan:
+        if seg.kind == 'cut' and seg.cut_from is None:
+            donor = next((s for s in stock_desc if s + TOL >= seg.length_m), seg.length_m)
+            seg.cut_from = donor
+    return plan
 
 def accumulate_bom_for_run(segs: List[Segment]) -> Dict[str, int]:
     bom: Dict[str, int] = {}
