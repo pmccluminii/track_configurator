@@ -535,6 +535,15 @@ def parse_length_string(text, measurement):
     except (TypeError, ValueError):
         return None
 
+def is_feed_label(text):
+    if text is None:
+        return False
+    stripped = str(text).strip().lower()
+    if not stripped:
+        return False
+    feed_tokens = ["feed", "feeder", "power in", "supply"]
+    return any(token in stripped for token in feed_tokens)
+
 def _sync_imperial_widget_state(widget_key, value_m):
     if value_m is None:
         return
@@ -1468,6 +1477,21 @@ base_spec = LayoutSpec(
 # Recompute plan & render
 plan = compute_plan(base_spec, measurement_system)
 
+feed_count = 0
+if is_feed_label(base_spec.start_end):
+    feed_count += 1
+if is_feed_label(base_spec.end_end):
+    feed_count += 1
+for corner_choice in [base_spec.corner1_join, base_spec.corner2_join, base_spec.corner3_join]:
+    if is_feed_label(corner_choice):
+        feed_count += 1
+for join_name in style.get("inline_join_types", {}).values():
+    if is_feed_label(join_name):
+        feed_count += 1
+for mc in base_spec.mid_components:
+    if is_feed_label(mc.part_no):
+        feed_count += 1
+
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
 
@@ -1478,6 +1502,11 @@ st.download_button(
     file_name=f"{base_spec.name}_diagram.svg",
     mime="image/svg+xml"
 )
+
+if feed_count == 0:
+    st.warning("No feeds detected in this layout. Add at least one end, inline, or mid-run feed before finalizing.")
+else:
+    st.info(f"Feeds detected: {feed_count}")
 
 # Minimum-length rule messages
 if plan.get("rules"):
@@ -1556,11 +1585,13 @@ for i in range(len(pts_bom)-1):
     for s in segs:
         donor_len = donor_length_for_segment(s)
         track_name = choose_track_name_for_donor(donor_len)
-        ref = f"Leg {i+1} Seg {seg_idx}"
+        ref_base = f"Leg {i+1} Seg {seg_idx}"
+        needs_cut = str(getattr(s, "kind", "")).lower() == "cut"
+        ref_label = f"{ref_base} (Cut required)" if needs_cut else ref_base
         if track_name:
-            add_excel_rows(ref, track_name, expected_type="Track")
+            add_excel_rows(ref_label, track_name, expected_type="Track")
         else:
-            rows.append([ref, format_length(donor_len, measurement_system), "--", "--"])
+            rows.append([ref_label, format_length(donor_len, measurement_system), "--", "--"])
         seg_idx += 1
 
 # Mid components
