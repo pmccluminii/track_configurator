@@ -544,6 +544,15 @@ def is_feed_label(text):
     feed_tokens = ["feed", "feeder", "power in", "supply"]
     return any(token in stripped for token in feed_tokens)
 
+def is_isolator_label(text):
+    if text is None:
+        return False
+    stripped = str(text).strip().lower()
+    if not stripped:
+        return False
+    isolator_tokens = ["isolator", "iso", "isolate", "isolated"]
+    return any(token in stripped for token in isolator_tokens)
+
 def _sync_imperial_widget_state(widget_key, value_m):
     if value_m is None:
         return
@@ -1492,6 +1501,21 @@ for mc in base_spec.mid_components:
     if is_feed_label(mc.part_no):
         feed_count += 1
 
+isolator_count = 0
+if is_isolator_label(base_spec.start_end):
+    isolator_count += 1
+if is_isolator_label(base_spec.end_end):
+    isolator_count += 1
+for corner_choice in [base_spec.corner1_join, base_spec.corner2_join, base_spec.corner3_join]:
+    if is_isolator_label(corner_choice):
+        isolator_count += 1
+for join_name in style.get("inline_join_types", {}).values():
+    if is_isolator_label(join_name):
+        isolator_count += 1
+for mc in base_spec.mid_components:
+    if is_isolator_label(mc.part_no):
+        isolator_count += 1
+
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
 
@@ -1506,7 +1530,11 @@ st.download_button(
 if feed_count == 0:
     st.warning("No feeds detected in this layout. Add at least one end, inline, or mid-run feed before finalizing.")
 else:
-    st.info(f"Feeds detected: {feed_count}")
+    isolator_text = f" • Isolations detected: {isolator_count}" if isolator_count > 0 else ""
+    if feed_count > 1 and isolator_count == 0:
+        st.warning(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
+    else:
+        st.info(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
 
 # Minimum-length rule messages
 if plan.get("rules"):
