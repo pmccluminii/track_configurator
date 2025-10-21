@@ -1553,7 +1553,7 @@ st.download_button(
 )
 
 if feed_count == 0:
-    st.warning("No feeds detected in this layout. Add at least one end, inline, or mid-run feed before finalizing.")
+    st.error("No feeds detected in this layout. Add at least one end, inline, or mid-run feed before finalizing.")
 else:
     isolator_text = f" • Isolations detected: {isolator_count}" if isolator_count > 0 else ""
     if feed_count > 1 and isolator_count == 0:
