@@ -185,6 +185,26 @@ st.markdown(
     .stCheckbox input, .stToggle input {
         accent-color: #111111 !important;
     }
+    .stAlert {
+        border-radius: 6px !important;
+        border-left: 6px solid transparent !important;
+        box-shadow: none !important;
+    }
+    .stAlert-success {
+        background-color: #e6f4ea !important;
+        border-left-color: #0b8043 !important;
+        color: #0b8043 !important;
+    }
+    .stAlert-warning {
+        background-color: #fff3e0 !important;
+        border-left-color: #f57c00 !important;
+        color: #e65100 !important;
+    }
+    .stAlert-error {
+        background-color: #fdecea !important;
+        border-left-color: #d93025 !important;
+        color: #c5221f !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -315,7 +335,7 @@ if os.path.exists(EXCEL_FILE):
         df_opts = pd.DataFrame(columns=["Name","Type","BOM SURFACE","BOM RECESSED","BOM RECESSED TRIMLESS","BOM SUSPENDED"])
         df_mount = None
 else:
-    st.warning(f"Options file not found: {EXCEL_FILE}. Using minimal fallbacks.")
+    st.error(f"Options file not found: {EXCEL_FILE}. Using minimal fallbacks.")
     df_opts = pd.DataFrame(columns=["Name","Type","BOM SURFACE","BOM RECESSED","BOM RECESSED TRIMLESS","BOM SUSPENDED"])
     df_mount = None
 
@@ -781,7 +801,7 @@ with st.sidebar:
     else:
         fallback_lengths = [2.0, 1.0]
         formatted_fallback = ", ".join(format_length(val, measurement_system, decimals=2, imperial_precision=2) for val in fallback_lengths)
-        st.info(f"No track lengths found in Excel ‘Track’ options. Using fallback {formatted_fallback}.")
+        st.warning(f"No track lengths found in Excel ‘Track’ options. Using fallback {formatted_fallback}.")
         stock_selected = config.get("stock_selected", fallback_lengths) or fallback_lengths
     stock_selected = [float(x) for x in stock_selected]
     cfg_set("stock_selected", stock_selected)
@@ -1009,7 +1029,12 @@ plan = compute_plan(base_spec, measurement_system)
 if plan.get("rules"):
     n_err = sum(1 for r in plan["rules"] if r.get("level") == "error")
     n_warn = sum(1 for r in plan["rules"] if r.get("level") == "warn")
-    st.warning(f"Validation: {n_err} error(s), {n_warn} warning(s) found.")
+    if n_err > 0:
+        st.error(f"Validation issues: {n_err} error(s), {n_warn} warning(s) found.")
+    elif n_warn > 0:
+        st.warning(f"Validation warnings: {n_warn} item(s) to review.")
+    else:
+        st.success("Validation: no minimum-length issues.")
 else:
     st.success("Validation: no minimum-length issues.")
 
@@ -1534,7 +1559,7 @@ else:
     if feed_count > 1 and isolator_count == 0:
         st.warning(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
     else:
-        st.info(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
+        st.success(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
 
 # Minimum-length rule messages
 if plan.get("rules"):
@@ -1544,7 +1569,7 @@ if plan.get("rules"):
         elif r.get("level") == "warn":
             st.warning(r.get("msg", ""))
         else:
-            st.info(r.get("msg", ""))
+            st.success(r.get("msg", ""))
 
 # =========================================================
 # Build BOM
