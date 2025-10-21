@@ -347,6 +347,7 @@ df_mount = _ensure_region_column(df_mount)
 MEASUREMENT_CHOICES = ["Metric", "Imperial"]
 METERS_PER_FOOT = 0.3048
 INCHES_PER_METER = 39.37007874015748
+INCH_DISPLAY_RESOLUTION = 16  # nearest 1/16"
 
 def feet_to_meters(feet_val):
     try:
@@ -365,6 +366,11 @@ def meters_to_inches(meters_val):
         return float(meters_val) * INCHES_PER_METER
     except (TypeError, ValueError):
         return None
+
+def _round_inches(value, resolution=INCH_DISPLAY_RESOLUTION):
+    if resolution <= 0:
+        return value
+    return round(float(value) * resolution) / resolution
 
 def _split_region_tokens(value):
     if value is None:
@@ -435,13 +441,13 @@ def meters_to_feet_inches_parts(meters_val, precision=4):
     total_inches = meters_to_inches(meters_val)
     if total_inches is None:
         return 0, 0.0
-    total_inches += 1e-8
+    total_inches = max(0.0, _round_inches(total_inches))
     feet = int(math.floor(total_inches / 12.0))
     inches = total_inches - feet * 12.0
     inches = round(inches, precision)
-    if inches >= 12.0:
+    if inches >= 12.0 - (1.0 / max(1, INCH_DISPLAY_RESOLUTION)):
         feet += 1
-        inches -= 12.0
+        inches = 0.0
     if abs(inches) < (10 ** (-precision)):
         inches = 0.0
     return feet, inches
@@ -535,7 +541,7 @@ def _sync_imperial_widget_state(widget_key, value_m):
     ft_key = f"{widget_key}_ft"
     in_key = f"{widget_key}_in"
     feet_val, inch_val = meters_to_feet_inches_parts(value_m, precision=4)
-    inch_val = min(max(inch_val, 0.0), 11.999)
+    inch_val = min(max(_round_inches(inch_val), 0.0), 12.0 - (1.0 / INCH_DISPLAY_RESOLUTION))
     current_ft = st.session_state.get(ft_key)
     current_in = st.session_state.get(in_key)
     try:
@@ -544,13 +550,13 @@ def _sync_imperial_widget_state(widget_key, value_m):
         current_m = None
     if current_m is None or abs(current_m - value_m) > 1e-6:
         st.session_state[ft_key] = int(feet_val)
-        st.session_state[in_key] = round(inch_val, 3)
+        st.session_state[in_key] = round(inch_val, 4)
 
 def length_number_input(label, config_key, widget_key, default_m, measurement, min_m=0.1, step=0.01, fmt="%.2f", imperial_mode="decimal"):
     measurement_key = str(measurement).strip().lower()
     if measurement_key.startswith("imperial") and imperial_mode == "feet_inches":
         feet_default, inches_default = meters_to_feet_inches_parts(default_m, precision=4)
-        inches_default = min(max(inches_default, 0.0), 11.999)
+        inches_default = min(max(_round_inches(inches_default), 0.0), 12.0 - (1.0 / INCH_DISPLAY_RESOLUTION))
         ft_key = f"{widget_key}_ft"
         in_key = f"{widget_key}_in"
         feet_val = st.number_input(
@@ -560,16 +566,20 @@ def length_number_input(label, config_key, widget_key, default_m, measurement, m
             step=1,
             key=ft_key
         )
+        inch_step = 1.0 / INCH_DISPLAY_RESOLUTION
+        inch_max = 12.0 - inch_step
         inch_val = st.number_input(
             f"{label} (in)",
             min_value=0.0,
-            max_value=11.999,
-            value=float(round(inches_default, 3)),
-            step=0.125,
-            format="%.3f",
+            max_value=float(inch_max),
+            value=float(round(inches_default, 4)),
+            step=float(inch_step),
+            format="%.4f",
             key=in_key
         )
-        value_m = feet_to_meters(float(feet_val) + float(inch_val)/12.0)
+        inch_val = min(max(_round_inches(inch_val), 0.0), inch_max)
+        st.session_state[in_key] = round(inch_val, 4)
+        value_m = feet_to_meters(float(feet_val) + inch_val/12.0)
         if value_m < min_m:
             value_m = min_m
             _sync_imperial_widget_state(widget_key, value_m)
@@ -652,12 +662,11 @@ with st.sidebar:
         mode_labels = ["Decimal feet", "Feet + inches"]
         label_to_mode = {"Decimal feet": "decimal", "Feet + inches": "feet_inches"}
         current_label = next((lbl for lbl, mode in label_to_mode.items() if mode == imperial_input_mode), mode_labels[0])
-        imperial_label = st.radio(
+        imperial_label = st.selectbox(
             "Imperial input style",
             mode_labels,
             index=_safe_index(mode_labels, current_label),
-            key="cfg_imperial_input_mode",
-            horizontal=True
+            key="cfg_imperial_input_mode"
         )
         imperial_input_mode = label_to_mode.get(imperial_label, "decimal")
     else:
