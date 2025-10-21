@@ -21,6 +21,7 @@ def default_config():
         "layout_name": "Layout 01",
         "track_profile": "Surface",
         "finish": "Black",
+        "measurement_system": "Metric",
         "shape": "Straight",
         "length": 5.0,
         "width": 2.0,
@@ -92,6 +93,7 @@ def sync_session_state_from_config(cfg):
     _sync_single(cfg, "layout_name", "cfg_layout_name")
     _sync_single(cfg, "track_profile", "cfg_track_profile")
     _sync_single(cfg, "finish", "cfg_finish")
+    _sync_single(cfg, "measurement_system", "cfg_measurement_system")
     _sync_single(cfg, "shape", "cfg_shape")
     _sync_single(cfg, "u_leg1", "cfg_u_leg1")
     _sync_single(cfg, "u_base", "cfg_u_base")
@@ -139,7 +141,9 @@ def sync_session_state_from_config(cfg):
         if key.startswith("cfg_inline_"):
             st.session_state.pop(key, None)
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide", initial_sidebar_state="expanded")
-st.title("Track Layout Maker — (Metric) v2.5.3")
+measurement_system_saved = cfg_get("measurement_system", "Metric")
+measurement_system = st.session_state.get("cfg_measurement_system", measurement_system_saved)
+st.title(f"Track Layout Maker — ({measurement_system}) v2.5.3")
 
 st.markdown(
     """
@@ -319,16 +323,193 @@ if df_mount is not None:
 for col in df_opts.columns:
     if df_opts[col].dtype == object:
         df_opts[col] = df_opts[col].astype(str).str.strip()
+if df_mount is not None:
+    for col in df_mount.columns:
+        if df_mount[col].dtype == object:
+            df_mount[col] = df_mount[col].astype(str).str.strip()
 
-def options_for_type(t):
-    return sorted(df_opts.loc[df_opts["Type"].str.lower() == str(t).lower(), "Name"].unique().tolist())
+def _ensure_region_column(df):
+    if df is None:
+        return None
+    df = df.copy()
+    region_col = next((c for c in df.columns if str(c).strip().lower() == "region"), None)
+    if region_col is None:
+        df["Region"] = ""
+    else:
+        df["Region"] = df[region_col].astype(str).str.strip()
+    return df
 
-options_by_type = {
-    "Track":  options_for_type("Track"),
-    "End":    options_for_type("End"),
-    "Join":   options_for_type("Join"),
-    "Corner": options_for_type("Corner"),
+df_opts = _ensure_region_column(df_opts)
+df_mount = _ensure_region_column(df_mount)
+
+MEASUREMENT_CHOICES = ["Metric", "Imperial"]
+METERS_PER_FOOT = 0.3048
+INCHES_PER_METER = 39.37007874015748
+
+def feet_to_meters(feet_val):
+    try:
+        return float(feet_val) * METERS_PER_FOOT
+    except (TypeError, ValueError):
+        return None
+
+def meters_to_feet(meters_val):
+    try:
+        return float(meters_val) / METERS_PER_FOOT
+    except (TypeError, ValueError):
+        return None
+
+def meters_to_inches(meters_val):
+    try:
+        return float(meters_val) * INCHES_PER_METER
+    except (TypeError, ValueError):
+        return None
+
+def _split_region_tokens(value):
+    if value is None:
+        return []
+    raw = str(value).replace("/", ",")
+    return [token.strip().lower() for token in raw.split(",") if token.strip()]
+
+_GLOBAL_REGION_TOKENS = {"", "global", "all", "both", "any"}
+_REGION_ALIASES = {
+    "metric": {"metric", "m", "metre", "meter", "emea", "eu"},
+    "imperial": {"imperial", "ft", "feet", "foot", "us", "usa", "na", "north america"}
 }
+
+def region_allows(value, measurement):
+    tokens = _split_region_tokens(value)
+    if not tokens:
+        return True
+    measurement_key = str(measurement).strip().lower()
+    aliases = _REGION_ALIASES.get(measurement_key, {measurement_key})
+    for token in tokens:
+        if token in _GLOBAL_REGION_TOKENS:
+            return True
+        if token in aliases:
+            return True
+        if measurement_key in token:
+            return True
+    return False
+
+def filter_by_measurement(df, measurement):
+    if df is None:
+        return None
+    if "Region" not in df.columns:
+        return df.copy()
+    mask = df["Region"].apply(lambda val: region_allows(val, measurement))
+    return df[mask].copy()
+
+def options_for_type(df, t):
+    if df is None or df.empty:
+        return []
+    mask = df["Type"].str.lower() == str(t).lower()
+    return sorted(df.loc[mask, "Name"].unique().tolist())
+
+def parse_length_to_meters(name):
+    text = str(name).strip()
+    if not text:
+        return None
+    text_low = text.lower()
+    match = re.search(r"(\d+)\s*'\s*(\d+(?:\.\d+)?)\s*\"", text_low)
+    if match:
+        feet = int(match.group(1))
+        inches = float(match.group(2))
+        total_inches = feet * 12.0 + inches
+        return total_inches * 0.0254
+    match = re.search(r"(\d+(?:\.\d+)?)\s*'", text_low)
+    if match:
+        feet_val = float(match.group(1))
+        return feet_val * METERS_PER_FOOT
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(ft|feet|foot)\b", text_low)
+    if match:
+        feet_val = float(match.group(1))
+        return feet_val * METERS_PER_FOOT
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(m|meter|metre)\b", text_low)
+    if match:
+        return float(match.group(1))
+    return None
+
+def meters_to_feet_inches_string(meters_val, precision=2, include_zero_feet=True):
+    val_inches = meters_to_inches(meters_val)
+    if val_inches is None:
+        return ""
+    feet = int(math.floor(val_inches / 12.0))
+    inches = val_inches - feet * 12.0
+    rounding = round(inches, precision)
+    carry_threshold = 0.5 * (10 ** (-precision))
+    if rounding >= 12.0 - carry_threshold:
+        feet += 1
+        rounding = 0.0
+    if abs(rounding) < (10 ** (-precision)):
+        rounding = 0.0
+    if precision == 0:
+        inch_str = f"{int(rounding)}"
+    else:
+        inch_str = f"{rounding:.{precision}f}".rstrip("0").rstrip(".")
+    if inch_str == "":
+        inch_str = "0"
+    if not include_zero_feet and feet == 0:
+        return f'{inch_str}"'
+    if rounding == 0.0:
+        return f"{feet}'"
+    return f"{feet}'{inch_str}\""
+
+def format_length(meters_val, measurement, decimals=2, imperial_precision=2, include_unit=True):
+    if meters_val is None:
+        return ""
+    if str(measurement).strip().lower().startswith("imperial"):
+        text = meters_to_feet_inches_string(meters_val, precision=imperial_precision, include_zero_feet=True)
+        return text
+    value = float(meters_val)
+    if include_unit:
+        return f"{value:.{decimals}f} m"
+    return f"{value:.{decimals}f}"
+
+def length_unit_suffix(measurement):
+    return "ft" if str(measurement).strip().lower().startswith("imperial") else "m"
+
+def meters_to_display_value(meters_val, measurement):
+    if meters_val is None:
+        return None
+    if str(measurement).strip().lower().startswith("imperial"):
+        return meters_to_feet(meters_val)
+    return meters_val
+
+def display_value_to_meters(display_val, measurement):
+    if display_val is None:
+        return None
+    if str(measurement).strip().lower().startswith("imperial"):
+        return feet_to_meters(display_val)
+    try:
+        return float(display_val)
+    except (TypeError, ValueError):
+        return None
+
+def length_number_input(label, config_key, widget_key, default_m, measurement, min_m=0.1, step=0.01, fmt="%.2f"):
+    unit = length_unit_suffix(measurement)
+    default_disp = meters_to_display_value(default_m, measurement)
+    if default_disp is None:
+        default_disp = meters_to_display_value(min_m, measurement)
+    if default_disp is None:
+        default_disp = 0.0
+    min_disp = meters_to_display_value(min_m, measurement)
+    if min_disp is None:
+        min_disp = 0.0
+    value_disp = st.number_input(
+        f"{label} ({unit})",
+        min_value=float(round(min_disp, 4)),
+        value=float(round(default_disp, 4)),
+        step=step,
+        format=fmt,
+        key=widget_key
+    )
+    value_m = display_value_to_meters(value_disp, measurement)
+    if value_m is None:
+        value_m = default_m
+    cfg_set(config_key, value_m)
+    return value_m
+
+options_by_type = {}
 
 PROFILE_TO_COL = {
     "Surface": "BOM SURFACE",
@@ -353,19 +534,43 @@ def _safe_index(options, value, default_idx=0):
         cmap = {_norm(o): i for i, o in enumerate(options)}
         return min(cmap.get(_norm(value), default_idx), len(options)-1)
 
-# Parse "Track" names -> numeric metres
-track_name_to_len_all = {}
-for nm in options_by_type.get("Track", []):
-    m = re.search(r'(\d+(?:\.\d+)?)\s*m\b', nm.lower())
-    if m:
-        track_name_to_len_all[nm] = float(m.group(1))
-available_track_lengths = sorted(set(track_name_to_len_all.values()))
+available_track_lengths = []
+max_run_meters = None
 
 # =========================================================
 # Sidebar — System
 # =========================================================
 with st.sidebar:
     st.header("System")
+    measurement_default = cfg_get("measurement_system", MEASUREMENT_CHOICES[0])
+    measurement_choice = st.selectbox(
+        "Measurement system",
+        MEASUREMENT_CHOICES,
+        index=_safe_index(MEASUREMENT_CHOICES, measurement_default),
+        key="cfg_measurement_system"
+    )
+    cfg_set("measurement_system", measurement_choice)
+    measurement_system = measurement_choice
+
+    df_opts_filtered = filter_by_measurement(df_opts, measurement_system)
+    df_mount_filtered = filter_by_measurement(df_mount, measurement_system)
+    options_by_type = {
+        "Track":  options_for_type(df_opts_filtered, "Track"),
+        "End":    options_for_type(df_opts_filtered, "End"),
+        "Join":   options_for_type(df_opts_filtered, "Join"),
+        "Corner": options_for_type(df_opts_filtered, "Corner"),
+    }
+    track_name_to_len = {}
+    if df_opts_filtered is not None and not df_opts_filtered.empty:
+        track_mask = df_opts_filtered["Type"].str.lower() == "track"
+        track_rows = df_opts_filtered.loc[track_mask, ["Name"]]
+        for _, row in track_rows.iterrows():
+            nm = row["Name"]
+            length_m = parse_length_to_meters(nm)
+            if length_m is not None:
+                track_name_to_len[nm] = round(length_m, 6)
+    available_track_lengths = sorted(set(track_name_to_len.values()))
+
     profile_options = list(PROFILE_TO_COL.keys())
     track_profile_default = cfg_get("track_profile", profile_options[0] if profile_options else "")
     track_profile = st.selectbox(
@@ -401,82 +606,61 @@ with st.sidebar:
     cfg_set("shape", shape)
 
     if shape == "U":
-        leg1 = st.number_input(
-            "U — Leg 1 (m)",
-            min_value=0.1,
-            value=float(config.get("u_leg1", 1.50)),
-            step=0.01,
-            format="%.2f",
-            key="cfg_u_leg1"
-        )
-        cfg_set("u_leg1", leg1)
-        base = st.number_input(
-            "U — Base (m)",
-            min_value=0.1,
-            value=float(config.get("u_base", 2.00)),
-            step=0.01,
-            format="%.2f",
-            key="cfg_u_base"
-        )
-        cfg_set("u_base", base)
-        leg3 = st.number_input(
-            "U — Leg 3 (m)",
-            min_value=0.1,
-            value=float(config.get("u_leg3", 1.50)),
-            step=0.01,
-            format="%.2f",
-            key="cfg_u_leg3"
-        )
-        cfg_set("u_leg3", leg3)
+        leg1 = length_number_input("U — Leg 1", "u_leg1", "cfg_u_leg1", float(config.get("u_leg1", 1.50)), measurement_system)
+        base = length_number_input("U — Base", "u_base", "cfg_u_base", float(config.get("u_base", 2.00)), measurement_system)
+        leg3 = length_number_input("U — Leg 3", "u_leg3", "cfg_u_leg3", float(config.get("u_leg3", 1.50)), measurement_system)
         length = base
         width = None
         depth = (leg1, base, leg3)
         cfg_set("length", length)
     else:
-        length = st.number_input(
-            "Length (m)",
-            min_value=0.1,
-            value=float(config.get("length", 5.0)),
-            step=0.01,
-            format="%.2f",
-            key="cfg_length"
-        )
-        cfg_set("length", length)
+        length = length_number_input("Length", "length", "cfg_length", float(config.get("length", 5.0)), measurement_system)
         width = None
         depth = None
         if shape in ("L", "Rectangle"):
-            width_val = st.number_input(
-                "Width (m)",
-                min_value=0.1,
-                value=float(config.get("width", 2.0)),
-                step=0.01,
-                format="%.2f",
-                key="cfg_width"
-            )
-            cfg_set("width", width_val)
+            width_val = length_number_input("Width", "width", "cfg_width", float(config.get("width", 2.0)), measurement_system)
             width = width_val
         else:
             width = width
 
     st.subheader("Stock lengths (from Excel)")
     if available_track_lengths:
-        default_stock = config.get("stock_selected", [])
+        default_stock_config = [float(x) for x in config.get("stock_selected", [])]
+        default_stock = []
+        for val in default_stock_config:
+            match = next((opt for opt in available_track_lengths if abs(opt - val) < 1e-6), None)
+            if match is not None:
+                default_stock.append(match)
         if not default_stock:
             default_stock = available_track_lengths
         stock_selected = st.multiselect(
             "Select lengths to use",
             available_track_lengths,
             default=default_stock,
-            key="cfg_stock_selected"
+            key="cfg_stock_selected",
+            format_func=lambda v: format_length(v, measurement_system, decimals=2, imperial_precision=2)
         )
     else:
-        st.info("No track lengths found in Excel ‘Track’ options. Using fallback 2 m and 1 m.")
-        stock_selected = config.get("stock_selected", [2.0, 1.0]) or [2.0, 1.0]
+        fallback_lengths = [2.0, 1.0]
+        formatted_fallback = ", ".join(format_length(val, measurement_system, decimals=2, imperial_precision=2) for val in fallback_lengths)
+        st.info(f"No track lengths found in Excel ‘Track’ options. Using fallback {formatted_fallback}.")
+        stock_selected = config.get("stock_selected", fallback_lengths) or fallback_lengths
     stock_selected = [float(x) for x in stock_selected]
     cfg_set("stock_selected", stock_selected)
 
-    maxrun = st.text_input("Max run (m) [optional]", config.get("max_run_text", ""), key="cfg_max_run")
+    maxrun_label = f"Max run ({length_unit_suffix(measurement_system)}) [optional]"
+    maxrun = st.text_input(maxrun_label, config.get("max_run_text", ""), key="cfg_max_run")
     cfg_set("max_run_text", maxrun)
+    max_run_meters = None
+    max_run_clean = str(maxrun).strip()
+    if max_run_clean:
+        try:
+            max_run_value = float(max_run_clean.replace(",", ""))
+            converted = display_value_to_meters(max_run_value, measurement_system)
+            if converted is not None:
+                max_run_meters = converted
+        except ValueError:
+            max_run_meters = None
 
 # Accessories
 with st.sidebar:
@@ -492,17 +676,18 @@ with st.sidebar:
     cover_part_ui  = st.text_input("Cover strip part no (optional)", config.get("cover_part", ""), key="cfg_cover_part")
     cfg_set("cover_part", cover_part_ui)
 
-    st.subheader("Mounting hardware (per meter)")
+    st.subheader(f"Mounting hardware (per {length_unit_suffix(measurement_system)})")
     mh_auto = None
-    if df_mount is not None and not df_mount.empty:
-        def _col(df, name):
-            for c in df.columns:
+    mount_df = df_mount_filtered if df_mount_filtered is not None else df_mount
+    if mount_df is not None and not mount_df.empty:
+        def _col(df_local, name):
+            for c in df_local.columns:
                 if c.strip().lower() == name.lower(): return c
             return None
-        c_prof = _col(df_mount, "Profile"); c_name = _col(df_mount, "Name")
-        c_pn = _col(df_mount, "PartNo"); c_sp = _col(df_mount, "Spacing_m")
+        c_prof = _col(mount_df, "Profile"); c_name = _col(mount_df, "Name")
+        c_pn = _col(mount_df, "PartNo"); c_sp = _col(mount_df, "Spacing_m")
         if all([c_prof, c_name, c_pn, c_sp]):
-            mh_candidates = df_mount[df_mount[c_prof].astype(str).str.strip().str.lower() == track_profile.strip().lower()]
+            mh_candidates = mount_df[mount_df[c_prof].astype(str).str.strip().str.lower() == track_profile.strip().lower()]
             if not mh_candidates.empty:
                 row0 = mh_candidates.iloc[0]
                 try: spacing_val = float(row0[c_sp]) if str(row0[c_sp]).strip() else None
@@ -526,24 +711,19 @@ with st.sidebar:
 
     mh_name    = st.text_input("Mounting hardware name", mh_name_default, key="cfg_mh_name")
     mh_part    = st.text_input("Mounting hardware part no", mh_part_default, key="cfg_mh_part")
-    mh_spacing = st.number_input(
-        "Spacing (m) between supports",
-        min_value=0.1,
-        value=float(spacing_default or 1.0),
-        step=0.1,
-        format="%.2f",
-        key="cfg_mh_spacing"
-    )
-
+    try:
+        spacing_default_val = float(spacing_default if spacing_default is not None else 1.0)
+    except (TypeError, ValueError):
+        spacing_default_val = 1.0
+    mh_spacing = length_number_input("Spacing between supports", "mh_spacing", "cfg_mh_spacing", spacing_default_val, measurement_system, min_m=0.1, step=0.1)
     cfg_set("mh_name", mh_name)
     cfg_set("mh_part", mh_part)
-    cfg_set("mh_spacing", float(mh_spacing))
 
 # Base spec
 base_spec = LayoutSpec(
     name=name, shape=shape, length_m=length, width_m=width, depth_m=depth,
     stock=stock_selected or [2.0, 1.0],
-    max_run_m=float(maxrun) if str(maxrun).strip() else None,
+    max_run_m=max_run_meters,
     start_end=None, end_end=None,
     corner1_join=None, corner2_join=None, corner3_join=None,
     mid_components=[]
@@ -586,10 +766,10 @@ def donor_length_for_segment(s):
     except Exception:
         return float(getattr(s, "length_m", 0.0))
 
-def compute_plan(spec):
+def compute_plan(spec, measurement):
     """
     Compute geometry + basic cut stats and apply minimum-length rules:
-      - Standalone run (single-leg Straight): must be ≥ 0.34 m to be useful (end feed + 1 light).
+      - Standalone run (single-leg Straight): must meet the configured hard/warn limits.
       - Any leg in a multi-leg shape: hard minimum ≥ 0.18 m; to fit a light in that leg, ≥ 0.36 m.
       - Individual segments (cuts/sticks) follow the same thresholds as legs.
     We return 'rules' with items of form {'level': 'error'|'warn', 'msg': '...'}.
@@ -601,6 +781,13 @@ def compute_plan(spec):
     rules = []
     leg_min_hard = MIN_SEGMENT_HARD_M
     leg_min_warn = MIN_SEGMENT_WARN_M
+    fmt_len = lambda val: format_length(val, measurement)
+    hard_text = fmt_len(leg_min_hard)
+    warn_text = fmt_len(leg_min_warn)
+    standalone_error_limit = 0.34
+    standalone_warn_limit = 0.36
+    standalone_error_text = fmt_len(standalone_error_limit)
+    standalone_warn_text = fmt_len(standalone_warn_limit)
 
     # Cut stats and segment validation
     for i in range(len(pts) - 1):
@@ -618,12 +805,12 @@ def compute_plan(spec):
             if seg_length < leg_min_hard - 1e-9 and not same_as_leg:
                 rules.append({
                     "level": "error",
-                    "msg": f"Leg {i+1} segment {seg_idx} is {seg_length:.2f} m, below the minimum {leg_min_hard:.2f} m. Combine it with an adjacent segment or cut a longer piece."
+                    "msg": f"Leg {i+1} segment {seg_idx} is {fmt_len(seg_length)}, below the minimum {hard_text}. Combine it with an adjacent segment or cut a longer piece."
                 })
             elif seg_length < leg_min_warn - 1e-9 and not same_as_leg:
                 rules.append({
                     "level": "warn",
-                    "msg": f"Leg {i+1} segment {seg_idx} is {seg_length:.2f} m. It clears {leg_min_hard:.2f} m, but to fit a light allow ≥ {leg_min_warn:.2f} m."
+                    "msg": f"Leg {i+1} segment {seg_idx} is {fmt_len(seg_length)}. It clears {hard_text}, but to fit a light allow ≥ {warn_text}."
                 })
 
     # Minimum-length validations
@@ -633,12 +820,12 @@ def compute_plan(spec):
         if run_len < 0.34 - 1e-9:
             rules.append({
                 "level": "error",
-                "msg": f"Standalone run is {run_len:.2f} m, below the minimum 0.34 m needed for an end feed + 1 light."
+                "msg": f"Standalone run is {fmt_len(run_len)}, below the minimum {standalone_error_text} needed for an end feed + 1 light."
             })
         elif run_len < 0.36 - 1e-9:
             rules.append({
                 "level": "warn",
-                "msg": f"Standalone run is {run_len:.2f} m. It meets 0.34 m minimum, but to fit a light comfortably use ≥ 0.36 m."
+                "msg": f"Standalone run is {fmt_len(run_len)}. It meets {standalone_error_text} minimum, but to fit a light comfortably use ≥ {standalone_warn_text}."
             })
     else:
         # Multi-leg shapes
@@ -647,12 +834,12 @@ def compute_plan(spec):
             if Lm < leg_min_hard - 1e-9:
                 rules.append({
                     "level": "error",
-                    "msg": f"Leg {i+1} is {Lm:.2f} m, below the hard minimum {leg_min_hard:.2f} m."
+                    "msg": f"Leg {i+1} is {fmt_len(Lm)}, below the hard minimum {hard_text}."
                 })
             elif Lm < leg_min_warn - 1e-9:
                 rules.append({
                     "level": "warn",
-                    "msg": f"Leg {i+1} is {Lm:.2f} m. It clears {leg_min_hard:.2f} m, but is too short to fit a light. Use ≥ {leg_min_warn:.2f} m to allow a luminaire."
+                    "msg": f"Leg {i+1} is {fmt_len(Lm)}. It clears {hard_text}, but is too short to fit a light. Use ≥ {warn_text} to allow a luminaire."
                 })
 
     # Mid-component validations
@@ -665,12 +852,12 @@ def compute_plan(spec):
             if pos_m > total_len + 1e-6:
                 rules.append({
                     "level": "warn",
-                    "msg": f"Mid component {idx} is placed at {pos_m:.2f} m, beyond the total layout length {total_len:.2f} m. It will be clamped to the end."
+                    "msg": f"Mid component {idx} is placed at {fmt_len(pos_m)}, beyond the total layout length {fmt_len(total_len)}. It will be clamped to the end."
                 })
             elif pos_m < -1e-6:
                 rules.append({
                     "level": "warn",
-                    "msg": f"Mid component {idx} is placed at {pos_m:.2f} m, before the start of the run. It will be clamped to the beginning."
+                    "msg": f"Mid component {idx} is placed at {fmt_len(pos_m)}, before the start of the run. It will be clamped to the beginning."
                 })
 
     return dict(
@@ -682,7 +869,7 @@ def compute_plan(spec):
         rules=rules
     )
 
-plan = compute_plan(base_spec)
+plan = compute_plan(base_spec, measurement_system)
 
 # Quick banner for rule status
 if plan.get("rules"):
@@ -692,23 +879,24 @@ if plan.get("rules"):
 else:
     st.success("Validation: no minimum-length issues.")
 
-def title_text_for_spec(spec, total_len, cover_on):
+def title_text_for_spec(spec, total_len, cover_on, measurement):
     parts = [spec.name, "—", spec.shape]
+    fmt = lambda val: format_length(val, measurement)
     if spec.shape in ("L","Rectangle"):
         if spec.length_m is not None and spec.width_m is not None:
-            parts.append(f"({spec.length_m:.2f} m × {spec.width_m:.2f} m)")
+            parts.append(f"({fmt(spec.length_m)} × {fmt(spec.width_m)})")
         elif spec.length_m is not None:
-            parts.append(f"({spec.length_m:.2f} m)")
+            parts.append(f"({fmt(spec.length_m)})")
     elif spec.shape == "U":
         if isinstance(spec.depth_m, (list, tuple)) and len(spec.depth_m) == 3:
             L1,B,L3 = spec.depth_m
-            parts.append(f"(L1 {float(L1):.2f} m × Base {float(B):.2f} m × L3 {float(L3):.2f} m)")
+            parts.append(f"(L1 {fmt(float(L1))} × Base {fmt(float(B))} × L3 {fmt(float(L3))})")
         elif spec.length_m is not None and spec.depth_m is not None:
-            parts.append(f"({spec.length_m:.2f} m × {float(spec.depth_m):.2f} m)")
+            parts.append(f"({fmt(spec.length_m)} × {fmt(float(spec.depth_m))})")
     else:
         if spec.length_m is not None:
-            parts.append(f"({spec.length_m:.2f} m)")
-    parts.append(f"• Total {total_len:.2f} m")
+            parts.append(f"({fmt(spec.length_m)})")
+    parts.append(f"• Total {fmt(total_len)}")
     parts.append("(with cover strip)" if cover_on else "(without cover strip)")
     return " ".join(parts)
 
@@ -797,6 +985,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     rotate_side_labels = spec.shape in {"L", "Rectangle", "U"}
     side_label_angle = -90.0
     dim_side_extra = style.get("dim_side_extra", 0.0)
+    measurement = style.get("measurement_system", "Metric")
 
     # Visual flip for U to render as "U" (not "n")
     if spec.shape == "U":
@@ -844,8 +1033,11 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     parts = [_svg_header(w_out, h_out)]
 
     # Title + summary
-    parts.append(draw_text_with_backer(w_out/2, style["title_y"] + style.get("extra_top", 0), title_text_for_spec(spec, total_len, style.get("cover_strip_on")), "middle", "title", px=16, pad_x=8, pad_y=4))
-    summary = f"Total track length: {plan['total_len']:.2f} m   •   Field cuts: {plan['total_cuts']}   •   Excess: {plan['total_excess']:.2f} m"
+    parts.append(draw_text_with_backer(w_out/2, style["title_y"] + style.get("extra_top", 0), title_text_for_spec(spec, total_len, style.get("cover_strip_on"), measurement), "middle", "title", px=16, pad_x=8, pad_y=4))
+    summary = (
+        f"Total track length: {format_length(plan['total_len'], measurement)}   •   "
+        f"Field cuts: {plan['total_cuts']}   •   Excess: {format_length(plan['total_excess'], measurement)}"
+    )
     parts.append(draw_text_with_backer(w_out/2, style["title_y"] + style.get("extra_top", 0) + 22, summary, "middle", "sumLabel", px=12, pad_x=8, pad_y=3))
 
     # Draw legs + outward labels
@@ -893,8 +1085,12 @@ def render_track_svg(spec, plan, style, max_w_px=900):
             mx = x1 + ux * (mid_m * S); my = y1 + uy * (mid_m * S)
             onx, ony = outward_normal(nx, ny, mx, my, cx, cy)
             donor_len = donor_length_for_segment(s)
-            label_text = (f"{s.length_m:.2f}m" if getattr(s, "kind", "") != "cut"
-                          else f"{s.length_m:.2f}m ({donor_len:.2f}C)")
+            seg_text = format_length(s.length_m, measurement)
+            if getattr(s, "kind", "") != "cut":
+                label_text = seg_text
+            else:
+                donor_text = format_length(donor_len, measurement)
+                label_text = f"{seg_text} ({donor_text} cut)"
             parts.append(
                 draw_text_with_backer(
                     mx + onx*style["seg_label_off"],
@@ -906,7 +1102,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
             cursor_m += s.length_m
 
         # Leg dimension — text only, outward (two lines)
-        leg_label = f"Leg {i+1}\n{leg_len_m:.2f} m"
+        leg_label = f"Leg {i+1}\n{format_length(leg_len_m, measurement)}"
         dim_base_offset = style["dim_off"] + style["font_px"]*0.2
         dim_total_offset = dim_base_offset + (dim_side_extra if (rotate_side_labels and is_vertical_leg) else 0.0)
         parts.append(
@@ -959,8 +1155,9 @@ def render_track_svg(spec, plan, style, max_w_px=900):
 # =========================================================
 with st.sidebar:
     st.subheader("Mid-run components")
+    mid_unit_suffix = length_unit_suffix(measurement_system)
     mid_str = st.text_area(
-        "Enter components (one per line as `pos_m:PARTNO`)",
+        f"Enter components (one per line as `pos_{mid_unit_suffix}:PARTNO`)",
         config.get("layout_mid_components", "1.0:FEED-TEE"),
         key="cfg_mid_components"
     )
@@ -1059,7 +1256,11 @@ parsed_mid_components = []
 for line in [l.strip() for l in mid_str.splitlines() if l.strip()]:
     try:
         pos, pn = line.split(":",1)
-        parsed_mid_components.append(MidComponent(float(pos.strip()), pn.strip()))
+        pos_val = float(pos.strip())
+        pos_m = display_value_to_meters(pos_val, measurement_system)
+        if pos_m is None:
+            continue
+        parsed_mid_components.append(MidComponent(pos_m, pn.strip()))
     except Exception:
         pass
 base_spec.mid_components = parsed_mid_components
@@ -1072,7 +1273,8 @@ style = dict(
     dim_off=dim_offset_px, dim_side_extra=dim_side_extra_px, title_y=title_offset_px,
     show_ticks=show_segment_ticks, tick_len=tick_len_px, show_element_labels=show_element_labels,
     inline_join_types=config.get("inline_join_types", {}), pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
-    auto_bottom_buffer=auto_bottom_buffer, scroll_preview=scroll_preview, cover_strip_on=cover_strip_on
+    auto_bottom_buffer=auto_bottom_buffer, scroll_preview=scroll_preview, cover_strip_on=cover_strip_on,
+    measurement_system=measurement_system
 )
 
 # Inline joins for UI (positions)
@@ -1139,7 +1341,7 @@ with st.sidebar:
 base_spec = LayoutSpec(
     name=name, shape=shape, length_m=length, width_m=width, depth_m=depth,
     stock=stock_selected or [2.0, 1.0],
-    max_run_m=float(maxrun) if str(maxrun).strip() else None,
+    max_run_m=max_run_meters,
     start_end=sel_end1,
     end_end=sel_end2,
     corner1_join=corner_selections[0] if len(corner_selections) >= 1 else config.get("corner1", ""),
@@ -1149,7 +1351,7 @@ base_spec = LayoutSpec(
 )
 
 # Recompute plan & render
-plan = compute_plan(base_spec)
+plan = compute_plan(base_spec, measurement_system)
 
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
@@ -1177,11 +1379,7 @@ if plan.get("rules"):
 # =========================================================
 profile_col = PROFILE_TO_COL[track_profile]
 
-track_name_to_len = {}
-for nm in options_by_type.get("Track", []):
-    m = re.search(r'(\d+(?:\.\d+)?)\s*m\b', nm.lower())
-    if m:
-        track_name_to_len[nm] = float(m.group(1))
+options_lookup_df = df_opts_filtered if df_opts_filtered is not None else df_opts
 
 def choose_track_name_for_donor(donor_len):
     if not track_name_to_len:
@@ -1196,7 +1394,8 @@ rows = []  # [Reference label, Name, Part no, QTY]
 
 def add_excel_rows(ref_label, display_name, expected_type=None):
     dn = str(display_name).strip()
-    candidates = df_opts[df_opts["Name"].str.lower() == dn.lower()] if dn else pd.DataFrame()
+    lookup_df = options_lookup_df if options_lookup_df is not None else pd.DataFrame()
+    candidates = lookup_df[lookup_df["Name"].str.lower() == dn.lower()] if (dn and not lookup_df.empty) else pd.DataFrame()
     if expected_type and not candidates.empty:
         candidates = candidates[candidates["Type"].str.lower() == expected_type.lower()]
     if candidates is None or candidates.empty:
@@ -1246,7 +1445,7 @@ for i in range(len(pts_bom)-1):
         if track_name:
             add_excel_rows(ref, track_name, expected_type="Track")
         else:
-            rows.append([ref, f"{donor_len:.2f} m", "--", "--"])
+            rows.append([ref, format_length(donor_len, measurement_system), "--", "--"])
         seg_idx += 1
 
 # Mid components
