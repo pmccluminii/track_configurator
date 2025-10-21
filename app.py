@@ -578,7 +578,6 @@ def length_number_input(label, config_key, widget_key, default_m, measurement, m
             key=in_key
         )
         inch_val = min(max(_round_inches(inch_val), 0.0), inch_max)
-        st.session_state[in_key] = round(inch_val, 4)
         value_m = feet_to_meters(float(feet_val) + inch_val/12.0)
         if value_m < min_m:
             value_m = min_m
