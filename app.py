@@ -22,6 +22,7 @@ def default_config():
         "track_profile": "Surface",
         "finish": "Black",
         "measurement_system": "Metric",
+        "imperial_input_mode": "decimal",
         "shape": "Straight",
         "length": 5.0,
         "width": 2.0,
@@ -94,6 +95,7 @@ def sync_session_state_from_config(cfg):
     _sync_single(cfg, "track_profile", "cfg_track_profile")
     _sync_single(cfg, "finish", "cfg_finish")
     _sync_single(cfg, "measurement_system", "cfg_measurement_system")
+    _sync_single(cfg, "imperial_input_mode", "cfg_imperial_input_mode")
     _sync_single(cfg, "shape", "cfg_shape")
     _sync_single(cfg, "u_leg1", "cfg_u_leg1")
     _sync_single(cfg, "u_base", "cfg_u_base")
@@ -429,18 +431,28 @@ def parse_length_to_meters(name):
         return float(match.group(1))
     return None
 
-def meters_to_feet_inches_string(meters_val, precision=2, include_zero_feet=True):
-    val_inches = meters_to_inches(meters_val)
-    if val_inches is None:
-        return ""
-    feet = int(math.floor(val_inches / 12.0))
-    inches = val_inches - feet * 12.0
-    rounding = round(inches, precision)
-    carry_threshold = 0.5 * (10 ** (-precision))
-    if rounding >= 12.0 - carry_threshold:
+def meters_to_feet_inches_parts(meters_val, precision=4):
+    total_inches = meters_to_inches(meters_val)
+    if total_inches is None:
+        return 0, 0.0
+    total_inches += 1e-8
+    feet = int(math.floor(total_inches / 12.0))
+    inches = total_inches - feet * 12.0
+    inches = round(inches, precision)
+    if inches >= 12.0:
         feet += 1
-        rounding = 0.0
-    if abs(rounding) < (10 ** (-precision)):
+        inches -= 12.0
+    if abs(inches) < (10 ** (-precision)):
+        inches = 0.0
+    return feet, inches
+
+def meters_to_feet_inches_string(meters_val, precision=2, include_zero_feet=True):
+    if meters_val is None:
+        return ""
+    feet, inches = meters_to_feet_inches_parts(meters_val, precision=precision+2)
+    rounding = round(inches, precision)
+    if rounding >= 12.0:
+        feet += 1
         rounding = 0.0
     if precision == 0:
         inch_str = f"{int(rounding)}"
@@ -448,11 +460,13 @@ def meters_to_feet_inches_string(meters_val, precision=2, include_zero_feet=True
         inch_str = f"{rounding:.{precision}f}".rstrip("0").rstrip(".")
     if inch_str == "":
         inch_str = "0"
-    if not include_zero_feet and feet == 0:
-        return f'{inch_str}"'
     if rounding == 0.0:
-        return f"{feet}'"
-    return f"{feet}'{inch_str}\""
+        if include_zero_feet or feet != 0:
+            return f"{feet}'"
+        return "0\""
+    if include_zero_feet or feet != 0:
+        return f"{feet}'{inch_str}\""
+    return f'{inch_str}"'
 
 def format_length(meters_val, measurement, decimals=2, imperial_precision=2, include_unit=True):
     if meters_val is None:
@@ -485,7 +499,84 @@ def display_value_to_meters(display_val, measurement):
     except (TypeError, ValueError):
         return None
 
-def length_number_input(label, config_key, widget_key, default_m, measurement, min_m=0.1, step=0.01, fmt="%.2f"):
+def parse_length_string(text, measurement):
+    raw = str(text).strip()
+    if not raw:
+        return None
+    measurement_key = str(measurement).strip().lower()
+    if measurement_key.startswith("imperial"):
+        if any(ch in raw for ch in ("'", '"')) or re.search(r"\b(ft|in)\b", raw.lower()):
+            parsed = parse_length_to_meters(raw)
+            if parsed is not None:
+                return parsed
+        try:
+            val = float(raw)
+            return feet_to_meters(val)
+        except (TypeError, ValueError):
+            pass
+        parts = re.split(r"[^0-9.]+", raw)
+        parts = [p for p in parts if p]
+        if len(parts) == 2:
+            try:
+                feet_val = float(parts[0])
+                inch_val = float(parts[1])
+                return feet_to_meters(feet_val + inch_val / 12.0)
+            except (TypeError, ValueError):
+                return None
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+def _sync_imperial_widget_state(widget_key, value_m):
+    if value_m is None:
+        return
+    ft_key = f"{widget_key}_ft"
+    in_key = f"{widget_key}_in"
+    feet_val, inch_val = meters_to_feet_inches_parts(value_m, precision=4)
+    inch_val = min(max(inch_val, 0.0), 11.999)
+    current_ft = st.session_state.get(ft_key)
+    current_in = st.session_state.get(in_key)
+    try:
+        current_m = feet_to_meters(float(current_ft) + float(current_in)/12.0)
+    except (TypeError, ValueError):
+        current_m = None
+    if current_m is None or abs(current_m - value_m) > 1e-6:
+        st.session_state[ft_key] = int(feet_val)
+        st.session_state[in_key] = round(inch_val, 3)
+
+def length_number_input(label, config_key, widget_key, default_m, measurement, min_m=0.1, step=0.01, fmt="%.2f", imperial_mode="decimal"):
+    measurement_key = str(measurement).strip().lower()
+    if measurement_key.startswith("imperial") and imperial_mode == "feet_inches":
+        feet_default, inches_default = meters_to_feet_inches_parts(default_m, precision=4)
+        inches_default = min(max(inches_default, 0.0), 11.999)
+        ft_key = f"{widget_key}_ft"
+        in_key = f"{widget_key}_in"
+        feet_val = st.number_input(
+            f"{label} (ft)",
+            min_value=0,
+            value=int(feet_default),
+            step=1,
+            key=ft_key
+        )
+        inch_val = st.number_input(
+            f"{label} (in)",
+            min_value=0.0,
+            max_value=11.999,
+            value=float(round(inches_default, 3)),
+            step=0.125,
+            format="%.3f",
+            key=in_key
+        )
+        value_m = feet_to_meters(float(feet_val) + float(inch_val)/12.0)
+        if value_m < min_m:
+            value_m = min_m
+            _sync_imperial_widget_state(widget_key, value_m)
+        cfg_set(config_key, value_m)
+        _sync_imperial_widget_state(widget_key, value_m)
+        return value_m
+
     unit = length_unit_suffix(measurement)
     default_disp = meters_to_display_value(default_m, measurement)
     if default_disp is None:
@@ -506,7 +597,12 @@ def length_number_input(label, config_key, widget_key, default_m, measurement, m
     value_m = display_value_to_meters(value_disp, measurement)
     if value_m is None:
         value_m = default_m
+    if value_m < min_m:
+        value_m = min_m
+        st.session_state[widget_key] = meters_to_display_value(value_m, measurement)
     cfg_set(config_key, value_m)
+    if measurement_key.startswith("imperial"):
+        _sync_imperial_widget_state(widget_key, value_m)
     return value_m
 
 options_by_type = {}
@@ -551,6 +647,22 @@ with st.sidebar:
     )
     cfg_set("measurement_system", measurement_choice)
     measurement_system = measurement_choice
+    imperial_input_mode = cfg_get("imperial_input_mode", "decimal")
+    if measurement_system == "Imperial":
+        mode_labels = ["Decimal feet", "Feet + inches"]
+        label_to_mode = {"Decimal feet": "decimal", "Feet + inches": "feet_inches"}
+        current_label = next((lbl for lbl, mode in label_to_mode.items() if mode == imperial_input_mode), mode_labels[0])
+        imperial_label = st.radio(
+            "Imperial input style",
+            mode_labels,
+            index=_safe_index(mode_labels, current_label),
+            key="cfg_imperial_input_mode",
+            horizontal=True
+        )
+        imperial_input_mode = label_to_mode.get(imperial_label, "decimal")
+    else:
+        imperial_input_mode = "decimal"
+    cfg_set("imperial_input_mode", imperial_input_mode)
 
     df_opts_filtered = filter_by_measurement(df_opts, measurement_system)
     df_mount_filtered = filter_by_measurement(df_mount, measurement_system)
@@ -606,19 +718,19 @@ with st.sidebar:
     cfg_set("shape", shape)
 
     if shape == "U":
-        leg1 = length_number_input("U — Leg 1", "u_leg1", "cfg_u_leg1", float(config.get("u_leg1", 1.50)), measurement_system)
-        base = length_number_input("U — Base", "u_base", "cfg_u_base", float(config.get("u_base", 2.00)), measurement_system)
-        leg3 = length_number_input("U — Leg 3", "u_leg3", "cfg_u_leg3", float(config.get("u_leg3", 1.50)), measurement_system)
+        leg1 = length_number_input("U — Leg 1", "u_leg1", "cfg_u_leg1", float(config.get("u_leg1", 1.50)), measurement_system, imperial_mode=imperial_input_mode)
+        base = length_number_input("U — Base", "u_base", "cfg_u_base", float(config.get("u_base", 2.00)), measurement_system, imperial_mode=imperial_input_mode)
+        leg3 = length_number_input("U — Leg 3", "u_leg3", "cfg_u_leg3", float(config.get("u_leg3", 1.50)), measurement_system, imperial_mode=imperial_input_mode)
         length = base
         width = None
         depth = (leg1, base, leg3)
         cfg_set("length", length)
     else:
-        length = length_number_input("Length", "length", "cfg_length", float(config.get("length", 5.0)), measurement_system)
+        length = length_number_input("Length", "length", "cfg_length", float(config.get("length", 5.0)), measurement_system, imperial_mode=imperial_input_mode)
         width = None
         depth = None
         if shape in ("L", "Rectangle"):
-            width_val = length_number_input("Width", "width", "cfg_width", float(config.get("width", 2.0)), measurement_system)
+            width_val = length_number_input("Width", "width", "cfg_width", float(config.get("width", 2.0)), measurement_system, imperial_mode=imperial_input_mode)
             width = width_val
         else:
             width = width
@@ -654,13 +766,9 @@ with st.sidebar:
     max_run_meters = None
     max_run_clean = str(maxrun).strip()
     if max_run_clean:
-        try:
-            max_run_value = float(max_run_clean.replace(",", ""))
-            converted = display_value_to_meters(max_run_value, measurement_system)
-            if converted is not None:
-                max_run_meters = converted
-        except ValueError:
-            max_run_meters = None
+        parsed_max = parse_length_string(max_run_clean.replace(",", " "), measurement_system)
+        if parsed_max is not None:
+            max_run_meters = parsed_max
 
 # Accessories
 with st.sidebar:
@@ -715,7 +823,7 @@ with st.sidebar:
         spacing_default_val = float(spacing_default if spacing_default is not None else 1.0)
     except (TypeError, ValueError):
         spacing_default_val = 1.0
-    mh_spacing = length_number_input("Spacing between supports", "mh_spacing", "cfg_mh_spacing", spacing_default_val, measurement_system, min_m=0.1, step=0.1)
+    mh_spacing = length_number_input("Spacing between supports", "mh_spacing", "cfg_mh_spacing", spacing_default_val, measurement_system, min_m=0.1, step=0.1, imperial_mode=imperial_input_mode)
     cfg_set("mh_name", mh_name)
     cfg_set("mh_part", mh_part)
 
@@ -1256,8 +1364,7 @@ parsed_mid_components = []
 for line in [l.strip() for l in mid_str.splitlines() if l.strip()]:
     try:
         pos, pn = line.split(":",1)
-        pos_val = float(pos.strip())
-        pos_m = display_value_to_meters(pos_val, measurement_system)
+        pos_m = parse_length_string(pos.strip(), measurement_system)
         if pos_m is None:
             continue
         parsed_mid_components.append(MidComponent(pos_m, pn.strip()))
