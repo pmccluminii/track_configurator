@@ -1294,6 +1294,41 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         p1 = (x, y - 2*htri/3); p2 = (x - s/2, y + htri/3); p3 = (x + s/2, y + htri/3)
         return f'<polygon class="{cls}" points="{p1[0]:.2f},{p1[1]:.2f} {p2[0]:.2f},{p2[1]:.2f} {p3[0]:.2f},{p3[1]:.2f}" />'
 
+    def legend_svg():
+        legend_entries = [
+            ("Join", "join"),
+            ("Isolated join", "iso"),
+            ("Start / End", "end"),
+        ]
+        if not legend_entries:
+            return ""
+        margin = 16.0
+        entry_spacing = max(22.0, style["font_px"] * 1.8)
+        icon_x = margin + 18.0
+        text_x = icon_x + style["node_size"] + 14.0
+        box_width = 200.0
+        box_height = entry_spacing * len(legend_entries) + margin
+        legend_x = max(12.0, style.get("pad", 28) * 0.2)
+        legend_y = style.get("extra_top", 0) + margin
+        parts_local = [
+            f'<g class="legend" transform="translate({legend_x:.2f},{legend_y:.2f})">',
+            f'<rect x="0" y="0" width="{box_width:.2f}" height="{box_height:.2f}" fill="#fff" fill-opacity="0.9" stroke="#111" stroke-width="1.2" rx="8" ry="8"/>'
+        ]
+        for idx, (label, kind) in enumerate(legend_entries):
+            cy = margin/2 + entry_spacing * (idx + 0.5)
+            if kind == "join":
+                parts_local.append(_circle(icon_x, cy, r=style["node_size"]/2))
+            elif kind == "iso":
+                parts_local.append(_circle(icon_x, cy, r=style["node_size"]/2))
+                mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
+                parts_local.append(_line(icon_x - mark_half, cy - mark_half, icon_x + mark_half, cy + mark_half, "isoMarkMask"))
+                parts_local.append(_line(icon_x - mark_half, cy - mark_half, icon_x + mark_half, cy + mark_half, "isoMark"))
+            elif kind == "end":
+                parts_local.append(_triangle(icon_x, cy, s=style["node_size"]))
+            parts_local.append(f'<text class="lenLabel" x="{text_x:.2f}" y="{cy:.2f}" dominant-baseline="middle">{label}</text>')
+        parts_local.append("</g>")
+        return "".join(parts_local)
+
     parts = [_svg_header(w_out, h_out)]
 
     # Title + summary
@@ -1444,6 +1479,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         parts.append(_square(xpx, ypx, s=max(6, style["node_size"]-1)))
         parts.append(draw_text_with_backer(xpx + style["mid_label_off"] + style["font_px"]*0.2, ypx - (style["font_px"]//2), mc.part_no, "start", "midLabel", px=style["font_px"]))
 
+    parts.append(legend_svg())
     parts.append(_svg_footer())
     return "\n".join(parts), int(h_out), {}
 
@@ -1521,7 +1557,7 @@ with st.sidebar:
         show_segment_ticks = st.checkbox("Show segment boundary ticks", show_segment_ticks, key="cfg_show_segment_ticks")
         tick_len_px = st.slider("Tick length (px)", 4, 24, tick_len_px, key="cfg_tick_len")
         show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", show_element_labels, key="cfg_show_element_labels")
-        isolation_mark_len_px = st.slider("Isolation mark length (px)", 6, 40, isolation_mark_len_px, key="cfg_isolation_mark_len")
+        isolation_mark_len_px = st.slider("Isolation mark length (px)", 14, 30, isolation_mark_len_px, key="cfg_isolation_mark_len")
 
     cfg_set("dim_offset", dim_offset_px)
     cfg_set("title_offset", title_offset_px)
@@ -1679,19 +1715,31 @@ for mc in base_spec.mid_components:
         feed_count += 1
 
 isolator_count = 0
+isolator_labels = []
 if option_has_isolation(option_meta_lookup, base_spec.start_end, expected_type="End"):
     isolator_count += 1
+    isolator_labels.append("End 1")
 if option_has_isolation(option_meta_lookup, base_spec.end_end, expected_type="End"):
     isolator_count += 1
-for corner_choice in [base_spec.corner1_join, base_spec.corner2_join, base_spec.corner3_join]:
+    isolator_labels.append("End 2")
+corner_choices = [base_spec.corner1_join, base_spec.corner2_join, base_spec.corner3_join]
+for idx, corner_choice in enumerate(corner_choices, start=1):
     if option_has_isolation(option_meta_lookup, corner_choice, expected_type="Corner"):
         isolator_count += 1
-for join_name in style.get("inline_join_types", {}).values():
+        isolator_labels.append(f"Corner {idx}")
+for lbl, join_name in style.get("inline_join_types", {}).items():
     if option_has_isolation(option_meta_lookup, join_name, expected_type="Join"):
         isolator_count += 1
+        isolator_labels.append(lbl)
 for mc in base_spec.mid_components:
     if option_has_isolation(option_meta_lookup, mc.part_no):
         isolator_count += 1
+        isolator_labels.append(f"Mid {mc.part_no}")
+
+isolator_labels_clean = [lab for lab in isolator_labels if lab]
+iso_summary = "No isolations detected"
+if isolator_labels_clean:
+    iso_summary = f"Isolations: {', '.join(isolator_labels_clean)}"
 
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
 components.html(svg, height=svg_h, scrolling=style.get("scroll_preview", True))
@@ -1707,11 +1755,11 @@ st.download_button(
 if feed_count == 0:
     st.error("No feeds detected in this layout. Add at least one end, inline, or mid-run feed before finalizing.")
 else:
-    isolator_text = f" • Isolations detected: {isolator_count}" if isolator_count > 0 else ""
+    message = f"Feeds detected: {feed_count} • {iso_summary}"
     if feed_count > 1 and isolator_count == 0:
-        st.warning(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
+        st.warning(message)
     else:
-        st.success(f"Feeds detected: {feed_count}{isolator_text or ' • No isolations detected'}")
+        st.success(message)
 
 # Minimum-length rule messages
 if plan.get("rules"):
