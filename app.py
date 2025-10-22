@@ -32,12 +32,15 @@ def default_config():
         "stock_selected": [],
         "max_run_text": "",
         "cover_strip_on": False,
+        "cover_choice": "Without cover strip",
         "cover_name": "Cover Strip (linear)",
         "cover_part": "",
-        "use_mount": False,
+        "use_mount": True,
+        "mount_choice": "With mounting hardware",
         "mh_name": "",
         "mh_part": "",
         "mh_spacing": 1.0,
+        "mh_qty_each": 1,
         "layout_mid_components": "",
         "show_style_options": False,
         "font_px": 12,
@@ -104,13 +107,8 @@ def sync_session_state_from_config(cfg):
     _sync_single(cfg, "width", "cfg_width")
     _sync_single(cfg, "stock_selected", "cfg_stock_selected")
     _sync_single(cfg, "max_run_text", "cfg_max_run")
-    _sync_single(cfg, "cover_strip_on", "cfg_cover_strip_on")
-    _sync_single(cfg, "cover_name", "cfg_cover_name")
-    _sync_single(cfg, "cover_part", "cfg_cover_part")
-    _sync_single(cfg, "use_mount", "cfg_use_mount")
-    _sync_single(cfg, "mh_name", "cfg_mh_name")
-    _sync_single(cfg, "mh_part", "cfg_mh_part")
-    _sync_single(cfg, "mh_spacing", "cfg_mh_spacing")
+    _sync_single(cfg, "cover_choice", "cfg_cover_choice")
+    _sync_single(cfg, "mount_choice", "cfg_mount_choice")
     _sync_single(cfg, "layout_mid_components", "cfg_mid_components")
     _sync_single(cfg, "show_style_options", "cfg_show_style")
     _sync_single(cfg, "font_px", "cfg_font_px")
@@ -368,6 +366,7 @@ MEASUREMENT_CHOICES = ["Metric", "Imperial"]
 METERS_PER_FOOT = 0.3048
 INCHES_PER_METER = 39.37007874015748
 INCH_DISPLAY_RESOLUTION = 16  # nearest 1/16"
+COVER_STRIP_STICK_M = 3.0
 
 def feet_to_meters(feet_val):
     try:
@@ -717,6 +716,7 @@ with st.sidebar:
         "End":    options_for_type(df_opts_filtered, "End"),
         "Join":   options_for_type(df_opts_filtered, "Join"),
         "Corner": options_for_type(df_opts_filtered, "Corner"),
+        "Cover Strip": options_for_type(df_opts_filtered, "Cover Strip"),
     }
     track_name_to_len = {}
     if df_opts_filtered is not None and not df_opts_filtered.empty:
@@ -819,19 +819,31 @@ with st.sidebar:
 # Accessories
 with st.sidebar:
     st.header("Accessories")
-    cover_strip_on = st.toggle(
-        "Include cover strip (linear, matches total track length)",
-        value=bool(config.get("cover_strip_on", False)),
-        key="cfg_cover_strip_on"
+    cover_toggle_options = ["With cover strip", "Without cover strip"]
+    cover_default_label = config.get("cover_choice", cover_toggle_options[1])
+    cover_choice = st.selectbox(
+        "Cover strip",
+        cover_toggle_options,
+        index=_safe_index(cover_toggle_options, cover_default_label, default_idx=1),
+        key="cfg_cover_choice"
     )
-    cfg_set("cover_strip_on", cover_strip_on)
-    cover_name_ui  = st.text_input("Cover strip name (BOM row)", config.get("cover_name", "Cover Strip (linear)"), key="cfg_cover_name")
-    cfg_set("cover_name", cover_name_ui)
-    cover_part_ui  = st.text_input("Cover strip part no (optional)", config.get("cover_part", ""), key="cfg_cover_part")
-    cfg_set("cover_part", cover_part_ui)
+    cover_catalog = options_by_type.get("Cover Strip", [])
+    cover_name_selected = cover_catalog[0] if cover_catalog else ""
+    include_cover_strip = (cover_choice == cover_toggle_options[0])
+    if include_cover_strip and not cover_name_selected:
+        st.warning("Cover strip option not found in Excel for the current configuration.")
+        include_cover_strip = False
+    cfg_set("cover_choice", cover_choice)
+    cfg_set("cover_strip_on", include_cover_strip)
+    if include_cover_strip:
+        cfg_set("cover_name", cover_name_selected)
+    else:
+        cover_name_selected = ""
+        cfg_set("cover_name", "")
+    cfg_set("cover_part", "")
 
-    st.subheader(f"Mounting hardware (per {length_unit_suffix(measurement_system)})")
-    mh_auto = None
+    st.subheader("Mounting hardware")
+    mount_entry = None
     mount_df = df_mount_filtered if df_mount_filtered is not None else df_mount
     if mount_df is not None and not mount_df.empty:
         def _col(df_local, name):
@@ -840,38 +852,72 @@ with st.sidebar:
             return None
         c_prof = _col(mount_df, "Profile"); c_name = _col(mount_df, "Name")
         c_pn = _col(mount_df, "PartNo"); c_sp = _col(mount_df, "Spacing_m")
-        if all([c_prof, c_name, c_pn, c_sp]):
+        c_qty = _col(mount_df, "QTY")
+        if all([c_prof, c_name, c_pn, c_sp, c_qty]):
             mh_candidates = mount_df[mount_df[c_prof].astype(str).str.strip().str.lower() == track_profile.strip().lower()]
             if not mh_candidates.empty:
                 row0 = mh_candidates.iloc[0]
-                try: spacing_val = float(row0[c_sp]) if str(row0[c_sp]).strip() else None
-                except: spacing_val = None
-                mh_auto = {"name": str(row0[c_name]).strip(), "part": str(row0[c_pn]).strip(), "spacing_m": spacing_val}
+                name_val = str(row0[c_name]).strip()
+                part_val = str(row0[c_pn]).strip()
+                try:
+                    spacing_val = float(row0[c_sp]) if str(row0[c_sp]).strip() else None
+                except Exception:
+                    spacing_val = None
+                try:
+                    qty_each = float(row0[c_qty]) if str(row0[c_qty]).strip() else None
+                except Exception:
+                    qty_each = None
+                if name_val:
+                    mount_entry = {
+                        "name": name_val,
+                        "part": part_val,
+                        "spacing_m": spacing_val if spacing_val and spacing_val > 0 else None,
+                        "qty_each": qty_each if qty_each and qty_each > 0 else 1.0
+                    }
 
-    use_mount_default = config.get("use_mount", bool(mh_auto))
-    use_mount  = st.toggle("Include mounting hardware", value=use_mount_default, key="cfg_use_mount")
-    cfg_set("use_mount", use_mount)
-
-    mh_name_default = config.get("mh_name", "")
-    mh_part_default = config.get("mh_part", "")
-    spacing_default = config.get("mh_spacing", mh_auto.get("spacing_m") if mh_auto else 1.0)
-    if use_mount and mh_auto:
-        if not mh_name_default:
-            mh_name_default = mh_auto["name"]
-        if not mh_part_default:
-            mh_part_default = mh_auto["part"]
-        if not spacing_default:
-            spacing_default = mh_auto.get("spacing_m") or 1.0
-
-    mh_name    = st.text_input("Mounting hardware name", mh_name_default, key="cfg_mh_name")
-    mh_part    = st.text_input("Mounting hardware part no", mh_part_default, key="cfg_mh_part")
-    try:
-        spacing_default_val = float(spacing_default if spacing_default is not None else 1.0)
-    except (TypeError, ValueError):
-        spacing_default_val = 1.0
-    mh_spacing = length_number_input("Spacing between supports", "mh_spacing", "cfg_mh_spacing", spacing_default_val, measurement_system, min_m=0.1, step=0.1, imperial_mode=imperial_input_mode)
-    cfg_set("mh_name", mh_name)
-    cfg_set("mh_part", mh_part)
+    mount_toggle_options = ["With mounting hardware", "Without mounting hardware"]
+    mount_default_label = config.get(
+        "mount_choice",
+        mount_toggle_options[0] if mount_entry else mount_toggle_options[1]
+    )
+    default_mount_idx = _safe_index(
+        mount_toggle_options,
+        mount_default_label,
+        default_idx=(0 if mount_entry else 1)
+    )
+    mount_choice = st.selectbox(
+        f"Mounting hardware (per {length_unit_suffix(measurement_system)})",
+        mount_toggle_options,
+        index=default_mount_idx,
+        key="cfg_mount_choice"
+    )
+    include_mounting = (mount_choice == mount_toggle_options[0]) and (mount_entry is not None)
+    if mount_entry is None:
+        st.caption("No mounting hardware listed for this profile.")
+    cfg_set("mount_choice", mount_choice if mount_entry else mount_toggle_options[1])
+    cfg_set("use_mount", include_mounting)
+    if include_mounting:
+        cfg_set("mh_name", mount_entry["name"])
+        cfg_set("mh_part", mount_entry["part"])
+        cfg_set("mh_spacing", mount_entry["spacing_m"])
+        cfg_set("mh_qty_each", mount_entry["qty_each"])
+        mh_name = mount_entry["name"]
+        mh_part = mount_entry["part"]
+        mh_spacing = mount_entry["spacing_m"]
+        mh_qty_each = mount_entry["qty_each"]
+    else:
+        cfg_set("mh_name", "")
+        cfg_set("mh_part", "")
+        cfg_set("mh_spacing", None)
+        cfg_set("mh_qty_each", None)
+        mh_name = ""
+        mh_part = ""
+        mh_spacing = None
+        mh_qty_each = None
+    cover_part_ui = ""
+    cover_name_ui = cover_name_selected
+    cover_strip_on = include_cover_strip
+    use_mount = include_mounting
 
 # Base spec
 base_spec = LayoutSpec(
@@ -1589,19 +1635,34 @@ def choose_track_name_for_donor(donor_len):
 
 rows = []  # [Reference label, Name, Part no, QTY]
 
-def add_excel_rows(ref_label, display_name, expected_type=None):
+def fetch_option_parts(display_name, expected_type=None):
     dn = str(display_name).strip()
     lookup_df = options_lookup_df if options_lookup_df is not None else pd.DataFrame()
-    candidates = lookup_df[lookup_df["Name"].str.lower() == dn.lower()] if (dn and not lookup_df.empty) else pd.DataFrame()
+    if not dn:
+        return None
+    if lookup_df is None or lookup_df.empty:
+        return {"name": dn, "parts": []}
+    candidates = lookup_df[lookup_df["Name"].str.lower() == dn.lower()]
     if expected_type and not candidates.empty:
         candidates = candidates[candidates["Type"].str.lower() == expected_type.lower()]
     if candidates is None or candidates.empty:
-        rows.append([ref_label, dn if dn else "--", "--", "--"]); return
-    parts = apply_finish_tokens(candidates.iloc[0].get(profile_col, ""), finish_token)
+        return {"name": dn, "parts": []}
+    row0 = candidates.iloc[0]
+    canonical_name = str(row0["Name"]).strip()
+    parts = apply_finish_tokens(row0.get(profile_col, ""), finish_token)
+    return {"name": canonical_name, "parts": parts}
+
+def add_excel_rows(ref_label, display_name, expected_type=None):
+    dn = str(display_name).strip()
+    if not dn:
+        rows.append([ref_label, "--", "--", "--"]); return
+    result = fetch_option_parts(dn, expected_type=expected_type)
+    canonical_name = result["name"] if result else dn
+    parts = result["parts"] if result else []
     if not parts:
-        rows.append([ref_label, dn, "--", "--"]); return
+        rows.append([ref_label, canonical_name, "--", "--"]); return
     for p in parts:
-        rows.append([ref_label, dn, p, 1])
+        rows.append([ref_label, canonical_name, p, 1])
 
 # Inline joins
 join_counter = 1
@@ -1652,14 +1713,39 @@ for idx, mc in enumerate(base_spec.mid_components, start=1):
     rows.append([f"MID {idx}", mc.part_no, mc.part_no, 1])
 
 # Cover strip row
-if style.get("cover_strip_on"):
-    rows.append(["COVER STRIP", cover_name_ui, cover_part_ui if cover_part_ui.strip() else "--", round(plan["total_len"], 2)])
+cover_part_lookup = fetch_option_parts(cover_name_ui, expected_type="Cover Strip") if style.get("cover_strip_on") else None
+if style.get("cover_strip_on") and cover_name_ui:
+    total_len_m = float(plan.get("total_len", 0.0) or 0.0)
+    sticks_needed = int(math.ceil(total_len_m / COVER_STRIP_STICK_M)) if total_len_m > 0 else 0
+    cover_parts = cover_part_lookup["parts"] if cover_part_lookup else []
+    cover_display_name = cover_part_lookup["name"] if cover_part_lookup else cover_name_ui
+    cover_part_ui = cover_parts[0] if cover_parts else ""
+    cfg_set("cover_part", cover_part_ui)
+    if sticks_needed > 0:
+        if cover_parts:
+            for part in cover_parts:
+                rows.append(["COVER STRIP", cover_display_name, part, sticks_needed])
+        else:
+            rows.append(["COVER STRIP", cover_display_name or "--", "--", sticks_needed])
 
 # Mounting hardware row
-if use_mount and mh_name.strip() and mh_spacing and mh_spacing > 0:
-    from math import ceil
-    qty = int(ceil(plan["total_len"] / float(mh_spacing)))
-    rows.append(["MOUNTING", mh_name.strip(), mh_part.strip() if mh_part.strip() else "--", qty])
+if use_mount and mh_name.strip():
+    spacing_val = float(mh_spacing) if mh_spacing else None
+    qty_each = float(mh_qty_each) if mh_qty_each else 1.0
+    total_points = 0
+    if spacing_val and spacing_val > 0:
+        for leg_len in seg_lens_bom:
+            if leg_len <= 0:
+                continue
+            segments_needed = max(1, int(math.ceil(leg_len / spacing_val)))
+            total_points += segments_needed + 1
+        shared_nodes = max(len(pts_bom) - 2, 0)
+        total_points = max(total_points - shared_nodes, len(pts_bom))
+    else:
+        total_points = len(pts_bom) if pts_bom else 0
+    if total_points > 0 and qty_each > 0:
+        total_qty = int(math.ceil(total_points * qty_each))
+        rows.append(["MOUNTING", mh_name.strip(), mh_part.strip() if mh_part.strip() else "--", total_qty])
 
 # =========================================================
 # BOM table + CSV
