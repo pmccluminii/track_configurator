@@ -1532,6 +1532,10 @@ with st.sidebar:
     end_label_off_px = int(config.get("end_label_off", 50))
     mid_label_offset_px = int(config.get("mid_label_off", 20))
     isolation_mark_len_px = int(config.get("isolation_mark_len", 18))
+    legend_offset_x_px = int(config.get("legend_offset_x", 20))
+    legend_offset_y_px = int(config.get("legend_offset_y", 0))
+    legend_offset_x_px = max(-400, min(400, legend_offset_x_px))
+    legend_offset_y_px = max(-400, min(400, legend_offset_y_px))
     dim_side_extra_px = int(config.get("dim_side_extra", 20))
 
     if show_style:
