@@ -1265,6 +1265,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     h_out = h + style.get("extra_top", 0) + style.get("extra_bottom", 0) + auto_extra
 
     iso_stroke_w = max(1.0, style["track_stroke"] * 0.6)
+    iso_mask_w = iso_stroke_w + 2.0
 
     def _svg_header(w, h):
         return f'''<svg viewBox="0 0 {w:.2f} {h:.2f}" width="100%" height="{h:.0f}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
@@ -1273,6 +1274,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     .track {{ stroke:#111; stroke-width:{style["track_stroke"]}; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
     .node  {{ fill:#111; }}
     .muted {{ fill:#333; }}
+    .isoMarkMask {{ stroke:#fff; stroke-width:{iso_mask_w:.2f}; fill:none; stroke-linecap:round; }}
     .isoMark   {{ stroke:#111; stroke-width:{iso_stroke_w:.2f}; fill:none; stroke-linecap:round; }}
     .title       {{ font-family: "SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-weight:700; font-size:16px; fill:#111; }}
     .lenLabel    {{ font-family: Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-weight:500; font-size:11px; fill:#111; font-variant-numeric: tabular-nums; }}
@@ -1336,6 +1338,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
                 join_label = f"Join {join_counter}"
                 if style.get("inline_join_isolation", {}).get(join_label, False):
                     mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
+                    parts.append(_line(bx - onx*mark_half, by - ony*mark_half, bx + onx*mark_half, by + ony*mark_half, "isoMarkMask"))
                     parts.append(_line(bx - onx*mark_half, by - ony*mark_half, bx + onx*mark_half, by + ony*mark_half, "isoMark"))
                 if style.get("show_element_labels", True):
                     join_rotate = side_label_angle if (rotate_side_labels and is_vertical_leg) else 0.0
@@ -1425,6 +1428,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
             if diag_dx * (px_i - cx) + diag_dy * (py_i - cy) < 0:
                 diag_dx, diag_dy = -diag_dx, -diag_dy
             mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
+            parts.append(_line(px_i - diag_dx*mark_half, py_i - diag_dy*mark_half, px_i + diag_dx*mark_half, py_i + diag_dy*mark_half, "isoMarkMask"))
             parts.append(_line(px_i - diag_dx*mark_half, py_i - diag_dy*mark_half, px_i + diag_dx*mark_half, py_i + diag_dy*mark_half, "isoMark"))
         if style.get("show_element_labels", True):
             horizontal_bias = abs(onx) > abs(ony)
