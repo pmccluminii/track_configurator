@@ -53,6 +53,8 @@ def default_config():
         "end_label_off": 50,
         "mid_label_off": 20,
         "isolation_mark_len": 18,
+        "legend_offset_x": 20,
+        "legend_offset_y": 0,
         "dim_side_extra": 20,
         "dim_offset": 55,
         "title_offset": 0,
@@ -121,6 +123,8 @@ def sync_session_state_from_config(cfg):
     _sync_single(cfg, "corner_label_off", "cfg_corner_label_off")
     _sync_single(cfg, "end_label_off", "cfg_end_label_off")
     _sync_single(cfg, "mid_label_off", "cfg_mid_label_off")
+    _sync_single(cfg, "legend_offset_x", "cfg_legend_offset_x")
+    _sync_single(cfg, "legend_offset_y", "cfg_legend_offset_y")
     _sync_single(cfg, "isolation_mark_len", "cfg_isolation_mark_len")
     _sync_single(cfg, "dim_side_extra", "cfg_dim_side_extra")
     _sync_single(cfg, "dim_offset", "cfg_dim_offset")
@@ -1308,8 +1312,10 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         text_x = icon_x + style["node_size"] + 14.0
         box_width = 200.0
         box_height = entry_spacing * len(legend_entries) + margin
-        legend_x = max(12.0, style.get("pad", 28) * 0.2)
-        legend_y = style.get("extra_top", 0) + margin
+        legend_offset_x = float(style.get("legend_offset_x", 20.0) or 0.0)
+        legend_offset_y = float(style.get("legend_offset_y", 0.0) or 0.0)
+        legend_x = legend_offset_x + max(12.0, style.get("pad", 28) * 0.2)
+        legend_y = h_out - box_height - (style.get("extra_bottom", 0) + margin) + legend_offset_y
         parts_local = [
             f'<g class="legend" transform="translate({legend_x:.2f},{legend_y:.2f})">',
             f'<rect x="0" y="0" width="{box_width:.2f}" height="{box_height:.2f}" fill="#fff" fill-opacity="0.9" stroke="#111" stroke-width="1.2" rx="8" ry="8"/>'
@@ -1557,7 +1563,9 @@ with st.sidebar:
         show_segment_ticks = st.checkbox("Show segment boundary ticks", show_segment_ticks, key="cfg_show_segment_ticks")
         tick_len_px = st.slider("Tick length (px)", 4, 24, tick_len_px, key="cfg_tick_len")
         show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", show_element_labels, key="cfg_show_element_labels")
-        isolation_mark_len_px = st.slider("Isolation mark length (px)", 14, 30, isolation_mark_len_px, key="cfg_isolation_mark_len")
+        isolation_mark_len_px = st.slider("Isolation mark length (px)", 6, 40, isolation_mark_len_px, key="cfg_isolation_mark_len")
+        legend_offset_x_px = st.slider("Legend offset X (px)", -400, 400, legend_offset_x_px, key="cfg_legend_offset_x")
+        legend_offset_y_px = st.slider("Legend offset Y (px)", -400, 400, legend_offset_y_px, key="cfg_legend_offset_y")
 
     cfg_set("dim_offset", dim_offset_px)
     cfg_set("title_offset", title_offset_px)
@@ -1565,6 +1573,8 @@ with st.sidebar:
     cfg_set("tick_len", tick_len_px)
     cfg_set("show_element_labels", show_element_labels)
     cfg_set("isolation_mark_len", isolation_mark_len_px)
+    cfg_set("legend_offset_x", legend_offset_x_px)
+    cfg_set("legend_offset_y", legend_offset_y_px)
 
     canvas_padding_px = int(config.get("canvas_padding", 140))
     extra_top_px = int(config.get("extra_top", 30))
