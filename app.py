@@ -1427,6 +1427,8 @@ def render_track_svg(spec, plan, style, max_w_px=900):
             # ensure mark points outward
             if diag_dx * (px_i - cx) + diag_dy * (py_i - cy) < 0:
                 diag_dx, diag_dy = -diag_dx, -diag_dy
+            # rotate 90° to run transversal through the corner glyph
+            diag_dx, diag_dy = -diag_dy, diag_dx
             mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
             parts.append(_line(px_i - diag_dx*mark_half, py_i - diag_dy*mark_half, px_i + diag_dx*mark_half, py_i + diag_dy*mark_half, "isoMarkMask"))
             parts.append(_line(px_i - diag_dx*mark_half, py_i - diag_dy*mark_half, px_i + diag_dx*mark_half, py_i + diag_dy*mark_half, "isoMark"))
