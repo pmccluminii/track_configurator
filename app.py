@@ -52,6 +52,7 @@ def default_config():
         "corner_label_off": 50,
         "end_label_off": 50,
         "mid_label_off": 20,
+        "isolation_mark_len": 18,
         "dim_side_extra": 20,
         "dim_offset": 55,
         "title_offset": 0,
@@ -120,6 +121,7 @@ def sync_session_state_from_config(cfg):
     _sync_single(cfg, "corner_label_off", "cfg_corner_label_off")
     _sync_single(cfg, "end_label_off", "cfg_end_label_off")
     _sync_single(cfg, "mid_label_off", "cfg_mid_label_off")
+    _sync_single(cfg, "isolation_mark_len", "cfg_isolation_mark_len")
     _sync_single(cfg, "dim_side_extra", "cfg_dim_side_extra")
     _sync_single(cfg, "dim_offset", "cfg_dim_offset")
     _sync_single(cfg, "title_offset", "cfg_title_offset")
@@ -432,6 +434,36 @@ def options_for_type(df, t):
     mask = df["Type"].str.lower() == str(t).lower()
     return sorted(df.loc[mask, "Name"].unique().tolist())
 
+def build_option_lookup(df):
+    lookup = {}
+    if df is None or df.empty:
+        return lookup
+    def _col_name(target):
+        target_low = str(target).strip().lower()
+        for col in df.columns:
+            if str(col).strip().lower() == target_low:
+                return col
+        return None
+    name_col = _col_name("Name")
+    type_col = _col_name("Type")
+    circuit_col = _col_name("Circuit")
+    for _, row in df.iterrows():
+        name_val = str(row[name_col]).strip() if name_col else ""
+        if not name_val:
+            continue
+        type_val = str(row[type_col]).strip().lower() if type_col else ""
+        circuit_val = str(row[circuit_col]).strip() if circuit_col else ""
+        key = (name_val.lower(), type_val if type_val else None)
+        lookup[key] = {
+            "name": name_val,
+            "type": type_val,
+            "circuit": circuit_val
+        }
+        fallback_key = (name_val.lower(), None)
+        if fallback_key not in lookup:
+            lookup[fallback_key] = lookup[key]
+    return lookup
+
 def parse_length_to_meters(name):
     text = str(name).strip()
     if not text:
@@ -572,6 +604,26 @@ def is_isolator_label(text):
     isolator_tokens = ["isolator", "iso", "isolate", "isolated"]
     return any(token in stripped for token in isolator_tokens)
 
+def option_lookup_entry(meta_lookup, name, expected_type=None):
+    if not meta_lookup or name is None:
+        return None
+    name_key = str(name).strip().lower()
+    if not name_key:
+        return None
+    type_key = str(expected_type).strip().lower() if expected_type else None
+    entry = meta_lookup.get((name_key, type_key))
+    if entry is None:
+        entry = meta_lookup.get((name_key, None))
+    return entry
+
+def option_has_isolation(meta_lookup, name, expected_type=None):
+    entry = option_lookup_entry(meta_lookup, name, expected_type=expected_type)
+    if entry:
+        circ = str(entry.get("circuit", "")).strip().lower()
+        if "isolat" in circ:
+            return True
+    return is_isolator_label(name)
+
 def _sync_imperial_widget_state(widget_key, value_m):
     if value_m is None:
         return
@@ -678,6 +730,7 @@ def _safe_index(options, value, default_idx=0):
 
 available_track_lengths = []
 max_run_meters = None
+option_meta_lookup = {}
 
 # =========================================================
 # Sidebar — System
@@ -718,6 +771,7 @@ with st.sidebar:
         "Corner": options_for_type(df_opts_filtered, "Corner"),
         "Cover Strip": options_for_type(df_opts_filtered, "Cover Strip"),
     }
+    option_meta_lookup = build_option_lookup(df_opts_filtered)
     track_name_to_len = {}
     if df_opts_filtered is not None and not df_opts_filtered.empty:
         track_mask = df_opts_filtered["Type"].str.lower() == "track"
@@ -1210,6 +1264,8 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     w_out = w
     h_out = h + style.get("extra_top", 0) + style.get("extra_bottom", 0) + auto_extra
 
+    iso_stroke_w = max(1.0, style["track_stroke"] * 0.6)
+
     def _svg_header(w, h):
         return f'''<svg viewBox="0 0 {w:.2f} {h:.2f}" width="100%" height="{h:.0f}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
   <style>
@@ -1217,6 +1273,7 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     .track {{ stroke:#111; stroke-width:{style["track_stroke"]}; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
     .node  {{ fill:#111; }}
     .muted {{ fill:#333; }}
+    .isoMark   {{ stroke:#111; stroke-width:{iso_stroke_w:.2f}; fill:none; stroke-linecap:round; }}
     .title       {{ font-family: "SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-weight:700; font-size:16px; fill:#111; }}
     .lenLabel    {{ font-family: Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-weight:500; font-size:11px; fill:#111; font-variant-numeric: tabular-nums; }}
     .joinLabel   {{ font-family: Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-style:italic; font-size:11px; fill:#111; }}
@@ -1277,6 +1334,9 @@ def render_track_svg(spec, plan, style, max_w_px=900):
                     parts.append(_line(bx + onx*half, by + ony*half, bx - onx*half, by - ony*half, "track"))
                 parts.append(_circle(bx, by, r=style["node_size"]/2))
                 join_label = f"Join {join_counter}"
+                if style.get("inline_join_isolation", {}).get(join_label, False):
+                    mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
+                    parts.append(_line(bx - onx*mark_half, by - ony*mark_half, bx + onx*mark_half, by + ony*mark_half, "isoMark"))
                 if style.get("show_element_labels", True):
                     join_rotate = side_label_angle if (rotate_side_labels and is_vertical_leg) else 0.0
                     parts.append(draw_text_with_backer(bx + onx*style["join_label_off"], by + ony*style["join_label_off"], join_label, "middle", "joinLabel", px=style["font_px"], rotate_deg=join_rotate))
@@ -1337,13 +1397,17 @@ def render_track_svg(spec, plan, style, max_w_px=900):
     internal_nodes_idx = list(range(1, max(0, len(pts_px)-1)))
     for idx, node_i in enumerate(internal_nodes_idx, start=1):
         px_i, py_i = pts_px[node_i]
+        nxc, nyc = node_normal(pts_px, node_i)
+        onx, ony = outward_normal(nxc, nyc, px_i, py_i, cx, cy)
+        corner_label = f"Corner {idx}"
         parts.append(_circle(px_i, py_i, r=style["node_size"]/2))
+        if style.get("corner_isolation", {}).get(corner_label, False):
+            mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
+            parts.append(_line(px_i - onx*mark_half, py_i - ony*mark_half, px_i + onx*mark_half, py_i + ony*mark_half, "isoMark"))
         if style.get("show_element_labels", True):
-            nxc, nyc = node_normal(pts_px, node_i)
-            onx, ony = outward_normal(nxc, nyc, px_i, py_i, cx, cy)
             horizontal_bias = abs(onx) > abs(ony)
             corner_rotate = side_label_angle if (rotate_side_labels and horizontal_bias) else 0.0
-            parts.append(draw_text_with_backer(px_i + onx*style["corner_label_off"], py_i + ony*style["corner_label_off"], f"Corner {idx}", "middle", "cornerLabel", px=style["font_px"], rotate_deg=corner_rotate))
+            parts.append(draw_text_with_backer(px_i + onx*style["corner_label_off"], py_i + ony*style["corner_label_off"], corner_label, "middle", "cornerLabel", px=style["font_px"], rotate_deg=corner_rotate))
 
     # Mid components
     placed = place_mid_components(base_spec.mid_components, plan["pts"])
@@ -1397,6 +1461,7 @@ with st.sidebar:
     corner_label_off_px = int(config.get("corner_label_off", 50))
     end_label_off_px = int(config.get("end_label_off", 50))
     mid_label_offset_px = int(config.get("mid_label_off", 20))
+    isolation_mark_len_px = int(config.get("isolation_mark_len", 18))
     dim_side_extra_px = int(config.get("dim_side_extra", 20))
 
     if show_style:
@@ -1428,12 +1493,14 @@ with st.sidebar:
         show_segment_ticks = st.checkbox("Show segment boundary ticks", show_segment_ticks, key="cfg_show_segment_ticks")
         tick_len_px = st.slider("Tick length (px)", 4, 24, tick_len_px, key="cfg_tick_len")
         show_element_labels = st.checkbox("Show element labels (End/Corner/Join text)", show_element_labels, key="cfg_show_element_labels")
+        isolation_mark_len_px = st.slider("Isolation mark length (px)", 6, 40, isolation_mark_len_px, key="cfg_isolation_mark_len")
 
     cfg_set("dim_offset", dim_offset_px)
     cfg_set("title_offset", title_offset_px)
     cfg_set("show_segment_ticks", show_segment_ticks)
     cfg_set("tick_len", tick_len_px)
     cfg_set("show_element_labels", show_element_labels)
+    cfg_set("isolation_mark_len", isolation_mark_len_px)
 
     canvas_padding_px = int(config.get("canvas_padding", 140))
     extra_top_px = int(config.get("extra_top", 30))
@@ -1476,7 +1543,9 @@ style = dict(
     end_label_off=end_label_off_px, mid_label_off=mid_label_offset_px,
     dim_off=dim_offset_px, dim_side_extra=dim_side_extra_px, title_y=title_offset_px,
     show_ticks=show_segment_ticks, tick_len=tick_len_px, show_element_labels=show_element_labels,
-    inline_join_types=config.get("inline_join_types", {}), pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
+    inline_join_types=config.get("inline_join_types", {}), inline_join_isolation={}, corner_isolation={},
+    isolation_mark_len=isolation_mark_len_px,
+    pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
     auto_bottom_buffer=auto_bottom_buffer, scroll_preview=scroll_preview, cover_strip_on=cover_strip_on,
     measurement_system=measurement_system
 )
@@ -1525,6 +1594,11 @@ with st.sidebar:
     for idx in range(len(corner_keys)):
         if idx >= len(corner_selections):
             cfg_set(corner_keys[idx], "")
+    corner_iso = {
+        label: option_has_isolation(option_meta_lookup, choice, expected_type="Corner")
+        for label, choice in zip(corner_labels, corner_selections)
+    }
+    style["corner_isolation"] = corner_iso
 
     st.subheader("Inline joins (stock boundaries)")
     join_options = options_by_type.get("Join", [])
@@ -1540,6 +1614,10 @@ with st.sidebar:
         st.caption("No inline joins for current geometry/stock.")
     cfg_set("inline_join_types", join_type_by_label)
     style["inline_join_types"] = join_type_by_label
+    style["inline_join_isolation"] = {
+        lbl: option_has_isolation(option_meta_lookup, choice, expected_type="Join")
+        for lbl, choice in join_type_by_label.items()
+    }
 
 # Update spec selections
 base_spec = LayoutSpec(
@@ -1573,18 +1651,18 @@ for mc in base_spec.mid_components:
         feed_count += 1
 
 isolator_count = 0
-if is_isolator_label(base_spec.start_end):
+if option_has_isolation(option_meta_lookup, base_spec.start_end, expected_type="End"):
     isolator_count += 1
-if is_isolator_label(base_spec.end_end):
+if option_has_isolation(option_meta_lookup, base_spec.end_end, expected_type="End"):
     isolator_count += 1
 for corner_choice in [base_spec.corner1_join, base_spec.corner2_join, base_spec.corner3_join]:
-    if is_isolator_label(corner_choice):
+    if option_has_isolation(option_meta_lookup, corner_choice, expected_type="Corner"):
         isolator_count += 1
 for join_name in style.get("inline_join_types", {}).values():
-    if is_isolator_label(join_name):
+    if option_has_isolation(option_meta_lookup, join_name, expected_type="Join"):
         isolator_count += 1
 for mc in base_spec.mid_components:
-    if is_isolator_label(mc.part_no):
+    if option_has_isolation(option_meta_lookup, mc.part_no):
         isolator_count += 1
 
 svg, svg_h, _ = render_track_svg(base_spec, plan, style)
@@ -1650,7 +1728,9 @@ def fetch_option_parts(display_name, expected_type=None):
     row0 = candidates.iloc[0]
     canonical_name = str(row0["Name"]).strip()
     parts = apply_finish_tokens(row0.get(profile_col, ""), finish_token)
-    return {"name": canonical_name, "parts": parts}
+    circuit_col = next((c for c in row0.index if str(c).strip().lower() == "circuit"), None)
+    circuit_val = str(row0[circuit_col]).strip() if circuit_col else ""
+    return {"name": canonical_name, "parts": parts, "circuit": circuit_val}
 
 def add_excel_rows(ref_label, display_name, expected_type=None):
     dn = str(display_name).strip()
