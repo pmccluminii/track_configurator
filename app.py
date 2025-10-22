@@ -1402,8 +1402,30 @@ def render_track_svg(spec, plan, style, max_w_px=900):
         corner_label = f"Corner {idx}"
         parts.append(_circle(px_i, py_i, r=style["node_size"]/2))
         if style.get("corner_isolation", {}).get(corner_label, False):
+            def _unit_vec(dx, dy):
+                mag = math.hypot(dx, dy)
+                if mag <= 1e-6:
+                    return (0.0, 0.0)
+                return (dx / mag, dy / mag)
+            diag_dx, diag_dy = 0.0, 0.0
+            if node_i - 1 >= 0:
+                prev_x, prev_y = pts_px[node_i - 1]
+                ux_in, uy_in = _unit_vec(px_i - prev_x, py_i - prev_y)
+                diag_dx += ux_in; diag_dy += uy_in
+            if node_i + 1 < len(pts_px):
+                next_x, next_y = pts_px[node_i + 1]
+                ux_out, uy_out = _unit_vec(next_x - px_i, next_y - py_i)
+                diag_dx += ux_out; diag_dy += uy_out
+            diag_len = math.hypot(diag_dx, diag_dy)
+            if diag_len <= 1e-6:
+                diag_dx, diag_dy = onx, ony
+                diag_len = math.hypot(diag_dx, diag_dy) or 1.0
+            diag_dx /= diag_len; diag_dy /= diag_len
+            # ensure mark points outward
+            if diag_dx * (px_i - cx) + diag_dy * (py_i - cy) < 0:
+                diag_dx, diag_dy = -diag_dx, -diag_dy
             mark_half = max(0.0, style.get("isolation_mark_len", style.get("node_size", 14)) / 2.0)
-            parts.append(_line(px_i - onx*mark_half, py_i - ony*mark_half, px_i + onx*mark_half, py_i + ony*mark_half, "isoMark"))
+            parts.append(_line(px_i - diag_dx*mark_half, py_i - diag_dy*mark_half, px_i + diag_dx*mark_half, py_i + diag_dy*mark_half, "isoMark"))
         if style.get("show_element_labels", True):
             horizontal_bias = abs(onx) > abs(ony)
             corner_rotate = side_label_angle if (rotate_side_labels and horizontal_bias) else 0.0
