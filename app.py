@@ -376,7 +376,6 @@ def _ensure_region_column(df):
 
 df_opts = _ensure_region_column(df_opts)
 df_mount = _ensure_region_column(df_mount)
-ITEM_DETAILS_LOOKUP = build_item_details_lookup(df_items)
 
 MEASUREMENT_CHOICES = ["Metric", "Imperial"]
 METERS_PER_FOOT = 0.3048
@@ -800,6 +799,8 @@ def apply_finish_tokens(bom_cell, finish_name, finish_token):
         resolved = resolve_finish_part_code(raw, finish_name, finish_token)
         results.append({"base": raw, "resolved": resolved})
     return results
+
+ITEM_DETAILS_LOOKUP = build_item_details_lookup(df_items)
 
 def _norm(s): return str(s).strip().lower()
 def _safe_index(options, value, default_idx=0):
