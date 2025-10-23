@@ -149,7 +149,7 @@ def sync_session_state_from_config(cfg):
 st.set_page_config(page_title="Track Layout Maker (Streamlit)", layout="wide", initial_sidebar_state="expanded")
 measurement_system_saved = cfg_get("measurement_system", "Metric")
 measurement_system = st.session_state.get("cfg_measurement_system", measurement_system_saved)
-st.title(f"Track Layout Maker — ({measurement_system}) v2.5.3")
+st.title(f"Track Layout Maker — ({measurement_system}) v3.0 Release")
 
 st.markdown(
     """
