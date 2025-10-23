@@ -334,18 +334,23 @@ if os.path.exists(EXCEL_FILE):
         if df_opts is None:
             raise ValueError("No sheet with columns Name/Type found")
         df_mount = pd.read_excel(xls, sheet_name="MountingHardware") if "MountingHardware" in xls.sheet_names else None
+        df_items = pd.read_excel(xls, sheet_name="Items") if "Items" in xls.sheet_names else None
     except Exception as e:
         st.error(f"Failed to read {EXCEL_FILE}: {e}")
         df_opts = pd.DataFrame(columns=["Name","Type","BOM SURFACE","BOM RECESSED","BOM RECESSED TRIMLESS","BOM SUSPENDED"])
         df_mount = None
+        df_items = None
 else:
     st.error(f"Options file not found: {EXCEL_FILE}. Using minimal fallbacks.")
     df_opts = pd.DataFrame(columns=["Name","Type","BOM SURFACE","BOM RECESSED","BOM RECESSED TRIMLESS","BOM SUSPENDED"])
     df_mount = None
+    df_items = None
 
 df_opts = df_opts.fillna("")
 if df_mount is not None:
     df_mount = df_mount.fillna("")
+if df_items is not None:
+    df_items = df_items.fillna("")
 for col in df_opts.columns:
     if df_opts[col].dtype == object:
         df_opts[col] = df_opts[col].astype(str).str.strip()
@@ -353,6 +358,10 @@ if df_mount is not None:
     for col in df_mount.columns:
         if df_mount[col].dtype == object:
             df_mount[col] = df_mount[col].astype(str).str.strip()
+if df_items is not None:
+    for col in df_items.columns:
+        if df_items[col].dtype == object:
+            df_items[col] = df_items[col].astype(str).str.strip()
 
 def _ensure_region_column(df):
     if df is None:
@@ -367,6 +376,7 @@ def _ensure_region_column(df):
 
 df_opts = _ensure_region_column(df_opts)
 df_mount = _ensure_region_column(df_mount)
+ITEM_DETAILS_LOOKUP = build_item_details_lookup(df_items)
 
 MEASUREMENT_CHOICES = ["Metric", "Imperial"]
 METERS_PER_FOOT = 0.3048
@@ -716,11 +726,80 @@ PROFILE_TO_COL = {
     "Suspended": "BOM SUSPENDED",
 }
 
-def apply_finish_tokens(bom_cell, finish_token):
+ITEM_DETAILS_LOOKUP = {}
+
+def build_item_details_lookup(df):
+    lookup = {}
+    if df is None or df.empty:
+        return lookup
+
+    def _find_col(target):
+        target_low = str(target).strip().lower()
+        for col in df.columns:
+            if str(col).strip().lower() == target_low:
+                return col
+        return None
+
+    item_col = _find_col("Item")
+    if item_col is None:
+        return lookup
+
+    name_col = _find_col("Name")
+    candidate_cols = [col for col in df.columns if col != item_col]
+    if name_col is None:
+        for col in candidate_cols:
+            low = str(col).strip().lower()
+            if low.startswith("unnamed") or low in {"description", "desc", "name", "title"}:
+                name_col = col
+                break
+    if name_col is None and candidate_cols:
+        name_col = candidate_cols[0]
+
+    finish_cols = [col for col in candidate_cols if col != name_col]
+
+    for _, row in df.iterrows():
+        base = str(row.get(item_col, "")).strip()
+        if not base:
+            continue
+        name_val = str(row.get(name_col, "")).strip() if name_col else ""
+        finishes = {}
+        for col in finish_cols:
+            col_name = str(col).strip()
+            value = str(row.get(col, "")).strip()
+            if value:
+                finishes[col_name.lower()] = value
+        lookup[base.lower()] = {
+            "name": name_val,
+            "finishes": finishes
+        }
+    return lookup
+
+def resolve_finish_part_code(part_code, finish_name, finish_token):
+    code = str(part_code).strip()
+    if not code:
+        return ""
+    entry = ITEM_DETAILS_LOOKUP.get(code.lower())
+    if entry and finish_name:
+        finish_key = str(finish_name).strip().lower()
+        finishes = entry.get("finishes", {})
+        if finish_key in finishes and finishes[finish_key]:
+            return finishes[finish_key]
+        for key, value in finishes.items():
+            if value and (finish_key in key or key in finish_key):
+                return value
+    replaced = code
+    if finish_token:
+        replaced = replaced.replace("**", finish_token).replace("/*", finish_token)
+    return replaced
+
+def apply_finish_tokens(bom_cell, finish_name, finish_token):
+    results = []
     if not bom_cell:
-        return []
-    parts = [p.strip() for p in str(bom_cell).split("|") if p.strip()]
-    return [p.replace("**", finish_token).replace("/*", finish_token) for p in parts]
+        return results
+    for raw in [p.strip() for p in str(bom_cell).split("|") if p.strip()]:
+        resolved = resolve_finish_part_code(raw, finish_name, finish_token)
+        results.append({"base": raw, "resolved": resolved})
+    return results
 
 def _norm(s): return str(s).strip().lower()
 def _safe_index(options, value, default_idx=0):
@@ -1623,6 +1702,7 @@ style = dict(
     show_ticks=show_segment_ticks, tick_len=tick_len_px, show_element_labels=show_element_labels,
     inline_join_types=config.get("inline_join_types", {}), inline_join_isolation={}, corner_isolation={},
     isolation_mark_len=isolation_mark_len_px,
+    legend_offset_x=legend_offset_x_px, legend_offset_y=legend_offset_y_px,
     pad=canvas_padding_px, extra_top=extra_top_px, extra_bottom=extra_bottom_px,
     auto_bottom_buffer=auto_bottom_buffer, scroll_preview=scroll_preview, cover_strip_on=cover_strip_on,
     measurement_system=measurement_system
@@ -1817,7 +1897,19 @@ def fetch_option_parts(display_name, expected_type=None):
         return {"name": dn, "parts": []}
     row0 = candidates.iloc[0]
     canonical_name = str(row0["Name"]).strip()
-    parts = apply_finish_tokens(row0.get(profile_col, ""), finish_token)
+    part_entries = apply_finish_tokens(row0.get(profile_col, ""), finish, finish_token)
+    parts = [entry.get("resolved", "") for entry in part_entries if entry.get("resolved")]
+    raw_parts = [entry.get("base", "") for entry in part_entries if entry.get("base")]
+    item_name = None
+    for base_code in raw_parts:
+        details = ITEM_DETAILS_LOOKUP.get(str(base_code).strip().lower())
+        if details:
+            candidate = str(details.get("name", "")).strip()
+            if candidate:
+                item_name = candidate
+                break
+    if item_name:
+        canonical_name = item_name
     circuit_col = next((c for c in row0.index if str(c).strip().lower() == "circuit"), None)
     circuit_val = str(row0[circuit_col]).strip() if circuit_col else ""
     return {"name": canonical_name, "parts": parts, "circuit": circuit_val}
